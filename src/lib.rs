@@ -3,6 +3,8 @@
 #![warn(clippy::all, rust_2018_idioms)]
 
 mod app;
+mod wave;
+pub mod vcd;
 pub use app::TemplateApp;
 
 // ----------------------------------------------------------------------------

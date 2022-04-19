@@ -10,65 +10,145 @@ use std::ops::Index;
 
 #[derive(Debug)]
 pub struct Signal {
-    values: BTreeMap<u64, Vec<Value>>,
+    // index into the values
+    ix: BTreeMap<u64, usize>,
+    values: SignalValues,
     width: usize,
+}
+
+#[derive(Debug)]
+enum SignalValues {
+    // done in chunks of the signal width
+    Values(Vec<Value>),
+    Floats(Vec<f64>),
+    // could be single vector of bytes with null terminated strings to reduce allocations
+    Strings(Vec<String>),
 }
 
 impl Signal {
     pub fn new(width: usize) -> Signal {
         Signal {
-            values: BTreeMap::new(),
+            ix: BTreeMap::new(),
+            values: SignalValues::Values(vec![]),
             width,
         }
     }
 
-    pub fn scalars(&self) -> impl Iterator<Item = (u64, Value)> + '_ {
-        // assert!(self.width == 1);
-        self.values.iter().map(|(&k, v)| (k, v[0]))
+    pub fn is_empty(&self) -> bool {
+        self.ix.is_empty()
     }
 
-    pub fn range(&self, range: std::ops::Range<u64>) -> btree_map::Range<'_, u64, Vec<Value>> {
-        let lower_bound = *self.values.range(..range.start).next_back().as_ref().unwrap().0;
-        self.values.range(lower_bound..range.end)
+    pub fn final_time(&self) -> u64 {
+        *self.ix.iter().next_back().as_ref().unwrap().0
     }
 
-    pub fn insert(&mut self, time: u64, value: Vec<Value>) {
-        if self.width != value.len() {
-            eprintln!("{} != {}", self.width, value.len());
+    // pub fn scalars(&self) -> impl Iterator<Item = (u64, Value)> + '_ {
+    //     // assert!(self.width == 1);
+    //     self.values.iter().map(|(&k, ix)| (k, v[0]))
+    // }
+
+    // pub fn range(&self, range: std::ops::Range<u64>) -> btree_map::Range<'_, u64, Vec<Value>> {
+    //     let lower_bound = *self.values.range(..range.start).next_back().as_ref().unwrap().0;
+    //     self.values.range(lower_bound..range.end)
+    // }
+
+    pub fn bit_range(&self, range: std::ops::Range<u64>) -> BitSignalRange<'_> {
+        BitSignalRange {
+            map: &self.ix,
+            range,
+            values: match &self.values {
+                SignalValues::Values(vs) => &vs,
+                _ => panic!("bit_range"),
+            },
         }
-        self.values.insert(time, value);
     }
+
+    pub fn insert_bit(&mut self, time: u64, value: Value) {
+        if self.width != 1 {
+            panic!("insert bit: width {} != 1", self.width);
+        }
+        // eprintln!("inserting bit at time {time}");
+        match &mut self.values {
+            SignalValues::Values(vs) => {
+                vs.push(value);
+                let ix = vs.len() - 1;
+                self.ix.insert(time, ix);
+            },
+            _ => panic!("insert_bit into non-value"),
+        }
+    }
+
+    // pub fn insert(&mut self, time: u64, value: Vec<Value>) {
+    //     if self.width != value.len() {
+    //         eprintln!("{} != {}", self.width, value.len());
+    //     }
+    //     self.values.insert(time, value);
+    // }
 }
 
-impl Index<u64> for Signal {
-    type Output = [Value];
-    fn index(&self, index: u64) -> &[Value] {
-        self.values.range(..index).next_back().as_ref().unwrap().1
-    }
-}
+// impl Index<u64> for Signal {
+//     type Output = [Value];
+//     fn index(&self, index: u64) -> &[Value] {
+//         self.values.range(..index).next_back().as_ref().unwrap().1
+//     }
+// }
 
-struct SignalSlice<'a> {
-    map: &'a BTreeMap<u64, Vec<Value>>,
+pub struct BitSignalRange<'a> {
+    map: &'a BTreeMap<u64, usize>,
     range: std::ops::Range<u64>,
-    width: usize,
+    values: &'a [Value]
 }
 
-impl<'a> Index<u64> for SignalSlice<'a> {
-    type Output = [Value];
-    fn index(&self, index: u64) -> &[Value] {
-        self.map.range(..index).next_back().as_ref().unwrap().1
+pub struct BitSignalRangeIter<'a> {
+    iter: btree_map::Range<'a, u64, usize>,
+    values: &'a [Value]
+}
+
+impl<'a> Iterator for BitSignalRangeIter<'a> {
+    type Item = (u64, Value);
+    fn next(&mut self) -> Option<Self::Item> {
+        let (t, ix) = self.iter.next()?;
+        Some((*t, self.values[*ix]))
     }
 }
 
-
-impl<'a> IntoIterator for SignalSlice<'a> {
-    type Item = (&'a u64, &'a Vec<Value>);
-    type IntoIter = btree_map::Range<'a, u64, Vec<Value>>;
+impl<'a> IntoIterator for BitSignalRange<'a> {
+    type Item = (u64, Value);
+    type IntoIter = BitSignalRangeIter<'a>;
     fn into_iter(self) -> Self::IntoIter {
-        let lower_bound = *self.map.range(..self.range.start).next_back().as_ref().unwrap().0;
-        self.map.range(lower_bound..self.range.end)
+        let lower_bound = self.map.range(..self.range.start).next_back().as_ref().map_or(0, |v| *v.0);
+        let upper_bound = self.map.range(self.range.end..).next().as_ref().map_or(u64::MAX - 1, |v| *v.0);
+        let iter = self.map.range(lower_bound..upper_bound + 1);
+        BitSignalRangeIter {
+            iter,
+            values: self.values,
+        }
     }
 }
+
+
+// struct SignalRange<'a> {
+//     map: &'a BTreeMap<u64, usize>,
+//     range: std::ops::Range<u64>,
+//     width: usize,
+// }
+
+// impl<'a> Index<u64> for SignalSlice<'a> {
+//     type Output = [Value];
+//     fn index(&self, index: u64) -> &[Value] {
+//         self.map.range(..index).next_back().as_ref().unwrap().1
+//     }
+// }
+
+
+// impl<'a> IntoIterator for SignalSlice<'a> {
+//     type Item = (&'a u64, &'a Vec<Value>);
+//     type IntoIter = btree_map::Range<'a, u64, Vec<Value>>;
+//     fn into_iter(self) -> Self::IntoIter {
+//         let lower_bound = *self.map.range(..self.range.start).next_back().as_ref().unwrap().0;
+//         self.map.range(lower_bound..self.range.end)
+//     }
+// }
 
 #[derive(Debug)]
 pub struct ScopedVar {
@@ -99,8 +179,21 @@ fn header_vars(items: &[vcd::ScopeItem]) -> Vec<ScopedVar> {
     vars
 }
 
-pub fn read_clocked_vcd(r: &mut impl io::Read) -> std::io::Result<Vec<(ScopedVar, Signal)>>  {
+pub fn read_clocked_vcd(r: &mut impl io::Read) -> std::io::Result<(Vec<(ScopedVar, Signal)>, u64)>  {
    let mut parser = vcd::Parser::new(r);
+
+   // The VCD spec is weird and confusing. There's a couple of features I'm not bothering to
+   // impliment yet (and probably others I've missed or misunderstood):
+   //
+   //   - the spec allows multiple variables to have the same identifier code which I don't support
+   //     (shouldn't be too difficuilt to add)
+   //   - the reference indexes are ignored, I don't really understand why you'd want it and it's
+   //     annoying the resolve the types (but also shouldn't be that difficult)
+   //
+   // I assume that time isn't allowed to go backwards but I don't think this is explicit in the
+   // spec. This implimentation allows going backwards in time only to change signals whose values
+   // for a later time haven't yet been written. i.e. each individual signal needs monotonous times
+   // but this can be interleaved in the vcd files.
 
    // Parse the header and find the wires
    let header = parser.parse_header()?;
@@ -120,19 +213,20 @@ pub fn read_clocked_vcd(r: &mut impl io::Read) -> std::io::Result<Vec<(ScopedVar
 
    for command in parser {
      use vcd::Command::*;
-     eprintln!("{command:?}");
+     // eprintln!("{command:?}");
      match command? {
        Timestamp(t) => time = t,
        ChangeScalar(i, v) => {
          let signal = signal_map.get_mut(&i).unwrap();
-         signal.insert(time, vec![v]);
+         signal.insert_bit(time, v);
        }
-       ChangeVector(i, v) => {
-         if let Some(signal) = signal_map.get_mut(&i) {
-            signal.insert(time, v);
-         } else {
-             eprintln!("id {i:?} not found");
-         }
+       ChangeVector(_i, _v) => {
+            panic!("can't change vector yet");
+         // if let Some(signal) = signal_map.get_mut(&i) {
+         //    // signal.insert(time, v);
+         // } else {
+         //     eprintln!("id {i:?} not found");
+         // }
        }
        _ => (),
      }
@@ -140,9 +234,12 @@ pub fn read_clocked_vcd(r: &mut impl io::Read) -> std::io::Result<Vec<(ScopedVar
 
    let mut vec_output = vec![];
    for (id, var) in id_map {
-       let signal = signal_map.remove(&id).unwrap();
+       let mut signal = signal_map.remove(&id).unwrap();
+       if let Some((_, &last_v)) = signal.ix.iter().next_back() {
+           signal.ix.insert(time, last_v);
+       }
        vec_output.push((var, signal));
    }
 
-   Ok(vec_output)
+   Ok((vec_output, time))
 }
