@@ -2,7 +2,6 @@ use eframe::{egui, epi};
 use eframe::egui::NumExt;
 use crate::wave;
 use crate::vcd;
-use rand::Rng;
 
 pub struct TemplateApp {
     // wave_data: Vec<(String, Vec<bool>)>,
@@ -12,8 +11,6 @@ pub struct TemplateApp {
     x_offset: Option<f32>,
     y_offset: f32,
 }
-
-// const NUM_CYCLES: usize = 100;
 
 impl TemplateApp {
     pub fn new(sigs: Vec<(vcd::ScopedVar, vcd::Signal)>, final_time: u64) -> TemplateApp {
@@ -116,19 +113,8 @@ impl epi::App for TemplateApp {
             let spacing = ui.spacing().item_spacing;
             let row_height_with_spacing = row_height_sans_spacing + spacing.y;
 
-            let available_outer = ui.available_rect_before_wrap();
-            // dbg!(available_outer);
-
             use egui::*;
 
-            // let viewport = main_viewport.get().unwrap();
-            // let mut viewport = main_viewport.unwrap();
-            // // let y
-            // viewport.min.x = 8.0;
-            // viewport.max.x = max_rect.max.x;
-            // let y = viewport.min.y;
-            // viewport.min.y = available_outer.min.y - viewport.min.y;
-            // viewport.max.y -= y;
             let viewport = Rect::from_min_size(egui::pos2(8.0, 16.0 - *y_offset), egui::vec2(180.0, 800.0));
 
             // eprintln!("viewport = {viewport:?}");
@@ -219,7 +205,7 @@ impl epi::App for TemplateApp {
             let spacing = ui.spacing().item_spacing;
             let row_height_with_spacing = row_height_sans_spacing + spacing.y;
 
-            let resp = scroll_area.show_viewport(ui, |ui, viewport| {
+            scroll_area.show_viewport(ui, |ui, viewport| {
                 // this is kinda nasty because you end up with a 1 frame lag between the waves and
                 // the labels. Maybe having 2 separate scroll areas would one? One hoirzontal only
                 // for the wave and a vertical only for waves and labels? I feel like I tried this
@@ -239,7 +225,6 @@ impl epi::App for TemplateApp {
 
                 ui.allocate_ui_at_rect(rect, |ui| {
                     ui.skip_ahead_auto_ids(min_row); // Make sure we get consistent IDs.
-        //             // let resp = ui.interact(egui::Rect::EVERYTHING, egui::Id::new("ui_hover"), egui::Sense::hover());
                     let resp = ui.interact(egui::Rect::EVERYTHING, egui::Id::new("ui_hover"), egui::Sense::drag());
                     let hover_pos = resp.hover_pos();
 
