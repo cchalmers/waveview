@@ -55,24 +55,24 @@ impl <'a> Wave<'a> {
         }
     }
 
-    pub fn ui(self, ui: &mut Ui) -> Response {
+    pub fn ui(self, ui: &mut Ui) {
         let Self {
             scale,
             view_range,
             height,
             wave_data,
-            name,
+            name: _,
         } = self;
 
         let unscaled_unit_width = 32.0;
 
         // let width = range.end() - range.start();
         let total_wave_width = scale * wave_data.final_time() as f32;
-        let (rect, response) = ui.allocate_exact_size(vec2(total_wave_width * unscaled_unit_width, height), Sense::drag());
-        let response = response.on_hover_ui_at_pointer(|ui| {ui.add(egui::widgets::Label::new(name));});
+        let (rect, _response) = ui.allocate_exact_size(vec2(total_wave_width * unscaled_unit_width, height), Sense::drag());
+        // let response = response.on_hover_ui_at_pointer(|ui| {ui.add(egui::widgets::Label::new(name));});
 
         if wave_data.is_empty() {
-            return response;
+            return;
         }
         let wave_painter = ui.painter().sub_region(rect);
 
@@ -95,7 +95,7 @@ impl <'a> Wave<'a> {
         let first_ix = (view_range.start() / 32.0 / scale).floor() as u64;
         let last_ix = (view_range.end() / 32.0 / scale).ceil() as u64;
         if last_ix <= first_ix {
-            return response;
+            return;
         }
         let mut scalars = wave_data.bit_range(first_ix..last_ix).into_iter();
         let (t0, v0) = scalars.next().unwrap();
@@ -223,7 +223,7 @@ impl <'a> Wave<'a> {
         ui.painter().extend(shapes);
 
 
-        response
+        // response
     }
 }
 

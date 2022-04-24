@@ -219,8 +219,11 @@ impl epi::App for TemplateApp {
             let spacing = ui.spacing().item_spacing;
             let row_height_with_spacing = row_height_sans_spacing + spacing.y;
 
-            scroll_area.show_viewport(ui, |ui, viewport| {
-                // main_viewport.set(Some(viewport));
+            let resp = scroll_area.show_viewport(ui, |ui, viewport| {
+                // this is kinda nasty because you end up with a 1 frame lag between the waves and
+                // the labels. Maybe having 2 separate scroll areas would one? One hoirzontal only
+                // for the wave and a vertical only for waves and labels? I feel like I tried this
+                // and it didn't work out properly.
                 *y_offset = viewport.min.y;
                 ui.set_height((row_height_with_spacing * num_rows as f32 - spacing.y).at_least(0.0));
                 let min_row = (viewport.min.y / row_height_with_spacing)
@@ -260,6 +263,18 @@ x_scale: {x_scale:?}",
                         }
                     });
 
+                    if let Some(pos) = &hover_pos {
+                        use egui::*;
+                        let mut shapes = vec![];
+                        // let color = Color32::from_additive_luminance(196);
+                        let p0 = pos2(pos.x, 0.0);
+                        let p1 = pos2(pos.x, 800.0);
+                        let stroke = Stroke::new(1.0, Color32::YELLOW);
+                        shapes.push(Shape::line_segment([p0, p1], stroke));
+                        ui.painter().extend(shapes);
+                    }
+
+
                     let view_width = viewport.max.x - viewport.min.x;
 
                     // do the actual zoom on the next frame where we know the scroll position that
@@ -292,8 +307,9 @@ x_scale: {x_scale:?}",
                     }
 
                 })
-                .inner
+                .inner;
             });
+
         });
 
         if false {
