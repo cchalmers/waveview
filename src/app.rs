@@ -236,7 +236,8 @@ impl epi::App for TemplateApp {
                     let stroke = egui::Stroke::new(1.0, egui::Color32::YELLOW);
                     let num_ticks = std::cmp::max(1, (main_viewport.width() / 64.0).floor() as usize);
                     let gap = std::cmp::max(1, (main_viewport.width() / 32.0 / *x_scale / num_ticks as f32).round() as usize);
-                    let mut i = (x_min + gap - 1) / gap * gap;
+                    // render the previous tick because part of it is still visible
+                    let mut i = (std::cmp::max(1, x_min) - 1) / gap * gap;
                     while i <= x_max { // in x_min..=x_max {
                         let p0 = egui::pos2(rect.min.x + *x_scale * 32.0 * i as f32, max_rect.min.y + 4.0);
                         let p1 = egui::pos2(rect.min.x + *x_scale * 32.0 * i as f32, max_rect.min.y + 10.0);
