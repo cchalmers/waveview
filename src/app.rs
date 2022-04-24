@@ -295,8 +295,14 @@ x_scale: {x_scale:?}",
                         use egui::*;
                         let mut shapes = vec![];
                         // let color = Color32::from_additive_luminance(196);
-                        let p0 = pos2(pos.x, 0.0);
-                        let p1 = pos2(pos.x, 800.0);
+
+                        let x = pos.x;
+                        let t = (x - rect.min.x) / 32.0 / *x_scale;
+                        let t_rounded = t.round();
+
+                        let rounded_x = rect.min.x + t_rounded * *x_scale * 32.0;
+                        let p0 = pos2(rounded_x, 0.0);
+                        let p1 = pos2(rounded_x, 800.0);
                         let stroke = Stroke::new(1.0, Color32::YELLOW);
                         shapes.push(Shape::line_segment([p0, p1], stroke));
                         ui.painter().extend(shapes);
