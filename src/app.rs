@@ -226,39 +226,9 @@ impl epi::App for TemplateApp {
                 let y_min = ui.max_rect().top() + min_row as f32 * row_height_with_spacing;
                 let y_max = ui.max_rect().top() + max_row as f32 * row_height_with_spacing;
 
-                let rect = egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), y_min..=16.0);
-                let v = egui::vec2(ui.max_rect().width(), 16.0);
-                ui.allocate_ui(v, |ui| {
-                    ui.set_height(16.0);
-                    let x_min = (main_viewport.min.x / 32.0 / *x_scale).floor() as usize;
-                    let x_max = (main_viewport.max.x / 32.0 / *x_scale).ceil() as usize;
-                    let mut ticks = vec![];
-                    let stroke = egui::Stroke::new(1.0, egui::Color32::YELLOW);
-                    let num_ticks = std::cmp::max(1, (main_viewport.width() / 64.0).floor() as usize);
-                    let gap = std::cmp::max(1, (main_viewport.width() / 32.0 / *x_scale / num_ticks as f32).round() as usize);
-                    // render the previous tick because part of it is still visible
-                    let mut i = (std::cmp::max(1, x_min) - 1) / gap * gap;
-                    while i <= x_max { // in x_min..=x_max {
-                        let p0 = egui::pos2(rect.min.x + *x_scale * 32.0 * i as f32, max_rect.min.y + 4.0);
-                        let p1 = egui::pos2(rect.min.x + *x_scale * 32.0 * i as f32, max_rect.min.y + 10.0);
-                        ticks.push(egui::Shape::line_segment([p0, p1], stroke));
-
-                        use egui::*;
-                        let anchor = Align2::LEFT_CENTER;
-                        let font = epaint::text::FontId::new(12.0, text::FontFamily::Monospace);
-                        let color = Color32::from_additive_luminance(196);
-
-                        let galley = ui.fonts().layout_no_wrap(i.to_string(), font, color);
-                        let rect = anchor.anchor_rect(Rect::from_min_size(p0 + vec2(4.0, 0.0), galley.size()));
-                        ticks.push(Shape::galley(rect.min, galley));
-                        i += gap;
-                    }
-                    ui.painter().extend(ticks);
-                });
-
                 let rect = egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), y_min+16.0..=y_max);
 
-                ui.allocate_ui_at_rect(rect, |ui| {
+                let hover_pos = ui.allocate_ui_at_rect(rect, |ui| {
                     // let mut max_rect = ui.max_rect();
             // let mut content_clip_rect = max_rect.expand(ui.visuals().clip_rect_margin);
             // // add clipping for the "timeline" bar
@@ -291,23 +261,6 @@ x_scale: {x_scale:?}",
                         }
                     });
 
-                    if let Some(pos) = &hover_pos {
-                        use egui::*;
-                        let mut shapes = vec![];
-                        // let color = Color32::from_additive_luminance(196);
-
-                        let x = pos.x;
-                        let t = (x - rect.min.x) / 32.0 / *x_scale;
-                        let t_rounded = t.round();
-
-                        let rounded_x = rect.min.x + t_rounded * *x_scale * 32.0;
-                        let p0 = pos2(rounded_x, 0.0);
-                        let p1 = pos2(rounded_x, 800.0);
-                        let stroke = Stroke::new(1.0, Color32::YELLOW);
-                        shapes.push(Shape::line_segment([p0, p1], stroke));
-                        ui.painter().extend(shapes);
-                    }
-
 
                     let view_width = viewport.max.x - viewport.min.x;
 
@@ -339,9 +292,69 @@ x_scale: {x_scale:?}",
                             *x_offset = None;
                         }
                     }
+                    hover_pos
 
                 })
                 .inner;
+
+                let mut hover_t = None;
+                if let Some(pos) = &hover_pos {
+                    use egui::*;
+                    let mut shapes = vec![];
+                    // let color = Color32::from_additive_luminance(196);
+
+                    let x = pos.x;
+                    let t = (x - rect.min.x) / 32.0 / *x_scale;
+                    let t_rounded = t.round();
+                    hover_t = Some(t_rounded as usize);
+
+                    let rounded_x = rect.min.x + t_rounded * *x_scale * 32.0;
+                    let p0 = pos2(rounded_x, max_rect.min.y + 0.0);
+                    let p1 = pos2(rounded_x, 800.0);
+                    let stroke = Stroke::new(1.0, Color32::YELLOW);
+                    shapes.push(Shape::line_segment([p0, p1], stroke));
+                    ui.painter().extend(shapes);
+                }
+
+
+                let rect = egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), y_min..=16.0);
+                let x_min = (main_viewport.min.x / 32.0 / *x_scale).floor() as usize;
+                let x_max = (main_viewport.max.x / 32.0 / *x_scale).ceil() as usize;
+                let mut ticks = vec![];
+                let stroke = egui::Stroke::new(1.0, egui::Color32::YELLOW);
+                let num_ticks = std::cmp::max(1, (main_viewport.width() / 64.0).floor() as usize);
+                let gap = std::cmp::max(1, (main_viewport.width() / 32.0 / *x_scale / num_ticks as f32).round() as usize);
+                // render the previous tick because part of it is still visible
+                let mut i = (std::cmp::max(1, x_min) - 1) / gap * gap;
+                while i <= x_max { // in x_min..=x_max {
+                    let mut used_i = i;
+                    let mut highlight = false;
+                    if let Some(t) = hover_t {
+                        // kinda ugly since we'll render twice if midway
+                        if i.abs_diff(t) <= gap / 2 {
+                            used_i = t;
+                            highlight = true;
+                        }
+                    }
+                    let p0 = egui::pos2(rect.min.x + *x_scale * 32.0 * used_i as f32, max_rect.min.y + 4.0);
+                    let p1 = egui::pos2(rect.min.x + *x_scale * 32.0 * used_i as f32, max_rect.min.y + 10.0);
+                    ticks.push(egui::Shape::line_segment([p0, p1], stroke));
+
+                    use egui::*;
+                    let anchor = Align2::LEFT_CENTER;
+                    let font_size = if highlight { 13.0 } else { 12.0 };
+                    let font = epaint::text::FontId::new(font_size, text::FontFamily::Monospace);
+                    let mut color = Color32::from_additive_luminance(196);
+                    if highlight {
+                        color = Color32::from_additive_luminance(255);
+                    }
+
+                    let galley = ui.fonts().layout_no_wrap(used_i.to_string(), font, color);
+                    let rect = anchor.anchor_rect(Rect::from_min_size(p0 + vec2(4.0, 0.0), galley.size()));
+                    ticks.push(Shape::galley(rect.min, galley));
+                    i += gap;
+                }
+                ui.painter().extend(ticks);
             });
 
         });
