@@ -234,12 +234,24 @@ impl epi::App for TemplateApp {
                     let x_max = (main_viewport.max.x / 32.0 / *x_scale).ceil() as usize;
                     let mut ticks = vec![];
                     let stroke = egui::Stroke::new(1.0, egui::Color32::YELLOW);
-                    for i in x_min..=x_max {
+                    let num_ticks = std::cmp::max(1, (main_viewport.width() / 64.0).floor() as usize);
+                    let gap = std::cmp::max(1, (main_viewport.width() / 32.0 / *x_scale / num_ticks as f32).round() as usize);
+                    let mut i = (x_min + gap - 1) / gap * gap;
+                    while i <= x_max { // in x_min..=x_max {
                         let p0 = egui::pos2(rect.min.x + *x_scale * 32.0 * i as f32, max_rect.min.y + 4.0);
                         let p1 = egui::pos2(rect.min.x + *x_scale * 32.0 * i as f32, max_rect.min.y + 10.0);
                         ticks.push(egui::Shape::line_segment([p0, p1], stroke));
+
+                        use egui::*;
+                        let anchor = Align2::LEFT_CENTER;
+                        let font = epaint::text::FontId::new(12.0, text::FontFamily::Monospace);
+                        let color = Color32::from_additive_luminance(196);
+
+                        let galley = ui.fonts().layout_no_wrap(i.to_string(), font, color);
+                        let rect = anchor.anchor_rect(Rect::from_min_size(p0 + vec2(4.0, 0.0), galley.size()));
+                        ticks.push(Shape::galley(rect.min, galley));
+                        i += gap;
                     }
-                    // ui.label(format!("{x_min}..{x_max}"));
                     ui.painter().extend(ticks);
                 });
 
