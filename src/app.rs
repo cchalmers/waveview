@@ -10,6 +10,7 @@ pub struct TemplateApp {
     final_time: u64,
     x_offset: Option<f32>,
     y_offset: f32,
+    main_viewport: egui::Rect,
 }
 
 impl TemplateApp {
@@ -30,6 +31,7 @@ impl TemplateApp {
             x_scale: 3.0,
             x_offset: None,
             y_offset: 0.0,
+            main_viewport: egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(100.0, 800.0)),
         }
     }
 }
@@ -83,7 +85,7 @@ impl epi::App for TemplateApp {
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
     fn update(&mut self, ctx: &egui::Context, frame: &epi::Frame) {
         // let Self { label, value } = self;
-        let Self { wave_data, final_time, x_scale, x_offset, y_offset } = self;
+        let Self { wave_data, final_time, x_scale, x_offset, y_offset, main_viewport } = self;
 
         // Examples of how to create different panels and windows.
         // Pick whichever suits you.
@@ -120,7 +122,9 @@ impl epi::App for TemplateApp {
             // eprintln!("viewport = {viewport:?}");
             let mut ui = ui.child_ui(viewport, *ui.layout());
             // let viewport = main_viewport.unwrap();
-            let content_clip_rect = max_rect.expand(ui.visuals().clip_rect_margin);
+            let mut content_clip_rect = max_rect.expand(ui.visuals().clip_rect_margin);
+            // add clipping for the "timeline" bar
+            content_clip_rect.min.y += 25.0;
             ui.set_clip_rect(content_clip_rect);
             let num_rows = wave_data.len();
             ui.set_height((row_height_with_spacing * num_rows as f32 - spacing.y).at_least(0.0));
@@ -145,7 +149,7 @@ impl epi::App for TemplateApp {
                 // ui.vertical(|ui| {
                 // ui.vertical_centered(|ui| {
                 ui.with_layout(egui::Layout::top_down(egui::Align::Max), |ui| {
-                    ui.scope(|ui| ui.set_height(20.0));
+                    ui.scope(|ui| ui.set_height(16.0 + 24.0));
                     for i in min_row..max_row {
                         ui.scope(|ui| {
                             // ui.set_height(32.0 - 12.0);
@@ -211,6 +215,7 @@ impl epi::App for TemplateApp {
                 // for the wave and a vertical only for waves and labels? I feel like I tried this
                 // and it didn't work out properly.
                 *y_offset = viewport.min.y;
+                *main_viewport = viewport;
                 ui.set_height((row_height_with_spacing * num_rows as f32 - spacing.y).at_least(0.0));
                 let min_row = (viewport.min.y / row_height_with_spacing)
                     .floor()
@@ -221,9 +226,34 @@ impl epi::App for TemplateApp {
                 let y_min = ui.max_rect().top() + min_row as f32 * row_height_with_spacing;
                 let y_max = ui.max_rect().top() + max_row as f32 * row_height_with_spacing;
 
-                let rect = egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), y_min..=y_max);
+                let rect = egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), y_min..=16.0);
+                let v = egui::vec2(ui.max_rect().width(), 16.0);
+                ui.allocate_ui(v, |ui| {
+                    ui.set_height(16.0);
+                    let x_min = (main_viewport.min.x / 32.0 / *x_scale).floor() as usize;
+                    let x_max = (main_viewport.max.x / 32.0 / *x_scale).ceil() as usize;
+                    let mut ticks = vec![];
+                    let stroke = egui::Stroke::new(1.0, egui::Color32::YELLOW);
+                    for i in x_min..=x_max {
+                        let p0 = egui::pos2(rect.min.x + *x_scale * 32.0 * i as f32, max_rect.min.y + 4.0);
+                        let p1 = egui::pos2(rect.min.x + *x_scale * 32.0 * i as f32, max_rect.min.y + 10.0);
+                        ticks.push(egui::Shape::line_segment([p0, p1], stroke));
+                    }
+                    // ui.label(format!("{x_min}..{x_max}"));
+                    ui.painter().extend(ticks);
+                });
+
+                let rect = egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), y_min+16.0..=y_max);
 
                 ui.allocate_ui_at_rect(rect, |ui| {
+                    // let mut max_rect = ui.max_rect();
+            // let mut content_clip_rect = max_rect.expand(ui.visuals().clip_rect_margin);
+            // // add clipping for the "timeline" bar
+            // content_clip_rect.
+            // ui.set_clip_rect(content_clip_rect);
+                    let mut clip_rect = ui.clip_rect();
+                    clip_rect.min.y += 16.0;
+                    ui.set_clip_rect(clip_rect);
                     ui.skip_ahead_auto_ids(min_row); // Make sure we get consistent IDs.
                     let resp = ui.interact(egui::Rect::EVERYTHING, egui::Id::new("ui_hover"), egui::Sense::drag());
                     let hover_pos = resp.hover_pos();
