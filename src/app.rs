@@ -10,6 +10,7 @@ pub struct TemplateApp {
     x_scale: f32,
     final_time: u64,
     x_offset: Option<f32>,
+    y_offset: f32,
 }
 
 // const NUM_CYCLES: usize = 100;
@@ -31,6 +32,7 @@ impl TemplateApp {
             final_time,
             x_scale: 3.0,
             x_offset: None,
+            y_offset: 0.0,
         }
     }
 }
@@ -84,7 +86,7 @@ impl epi::App for TemplateApp {
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
     fn update(&mut self, ctx: &egui::Context, frame: &epi::Frame) {
         // let Self { label, value } = self;
-        let Self { wave_data, final_time, x_scale, x_offset } = self;
+        let Self { wave_data, final_time, x_scale, x_offset, y_offset } = self;
 
         // Examples of how to create different panels and windows.
         // Pick whichever suits you.
@@ -102,37 +104,101 @@ impl epi::App for TemplateApp {
             });
         });
 
+        // let main_viewport = std::rc::Rc::new(std::cell::Cell::new(None));
+        // let mut main_viewport = None;
+
         egui::SidePanel::left("side_panel").show(ctx, |ui| {
-            ui.heading("Side Panel");
+            ui.set_width(180.0);
+            let max_rect = ui.max_rect();
+            // max_rect.max.x += 100.0;
 
-            let mut label = "hi".to_string();
-            let mut value: f32 = 1.0;
-            let value = &mut value;
+            let row_height_sans_spacing = 32.0;
+            let spacing = ui.spacing().item_spacing;
+            let row_height_with_spacing = row_height_sans_spacing + spacing.y;
 
-            ui.horizontal(|ui| {
-                ui.label("Write something: ");
-                ui.text_edit_singleline(&mut label);
-            });
+            let available_outer = ui.available_rect_before_wrap();
+            // dbg!(available_outer);
 
-            ui.add(egui::Slider::new(value, 0.0..=10.0).text("value"));
-            if ui.button("Increment").clicked() {
-                *value += 1.0;
-            }
+            use egui::*;
 
-            ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 0.0;
-                    ui.label("powered by ");
-                    ui.hyperlink_to("egui", "https://github.com/emilk/egui");
-                    ui.label(" and ");
-                    ui.hyperlink_to("eframe", "https://github.com/emilk/egui/tree/master/eframe");
+            // let viewport = main_viewport.get().unwrap();
+            // let mut viewport = main_viewport.unwrap();
+            // // let y
+            // viewport.min.x = 8.0;
+            // viewport.max.x = max_rect.max.x;
+            // let y = viewport.min.y;
+            // viewport.min.y = available_outer.min.y - viewport.min.y;
+            // viewport.max.y -= y;
+            let viewport = Rect::from_min_size(egui::pos2(8.0, 16.0 - *y_offset), egui::vec2(180.0, 800.0));
+
+            // eprintln!("viewport = {viewport:?}");
+            let mut ui = ui.child_ui(viewport, *ui.layout());
+            // let viewport = main_viewport.unwrap();
+            let content_clip_rect = max_rect.expand(ui.visuals().clip_rect_margin);
+            ui.set_clip_rect(content_clip_rect);
+            let num_rows = wave_data.len();
+            ui.set_height((row_height_with_spacing * num_rows as f32 - spacing.y).at_least(0.0));
+            // let min_row = (viewport.min.y / row_height_with_spacing)
+            let min_row = (*y_offset / row_height_with_spacing)
+                .floor()
+                .at_least(0.0) as usize;
+            // let max_row = (viewport.max.y / row_height_with_spacing).ceil() as usize + 1;
+            let max_row = ((*y_offset + max_rect.size().y) / row_height_with_spacing).ceil() as usize + 1;
+            let max_row = max_row.at_most(num_rows);
+
+            ui.set_height((row_height_with_spacing * num_rows as f32 - spacing.y).at_least(0.0));
+            let max_row = max_row.at_most(num_rows);
+
+            let y_min = ui.max_rect().top() + min_row as f32 * row_height_with_spacing;
+            let y_max = ui.max_rect().top() + max_row as f32 * row_height_with_spacing;
+
+            let rect = egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), y_min..=y_max);
+
+            ui.allocate_ui_at_rect(rect, |ui| {
+                ui.skip_ahead_auto_ids(min_row); // Make sure we get consistent IDs.
+                // ui.vertical(|ui| {
+                // ui.vertical_centered(|ui| {
+                ui.with_layout(egui::Layout::top_down(egui::Align::Max), |ui| {
+                    ui.scope(|ui| ui.set_height(20.0));
+                    for i in min_row..max_row {
+                        ui.scope(|ui| {
+                            // ui.set_height(32.0 - 12.0);
+                            ui.set_height(32.0);
+                            ui.label(&wave_data[i].0);
+                        });
+                    }
                 });
-            });
+
+            })
+            .inner
+            // use egui::*;
+            // let mut shapes = vec![];
+            // let color = Color32::from_additive_luminance(196);
+            // // ui.allocate_ui_at_rect(rect, |ui| {
+            // //     ui.skip_ahead_auto_ids(min_row); // Make sure we get consistent IDs.
+            // //     ui.vertical(|ui| {
+            //         for i in min_row..max_row {
+            // //             ui.group(|ui| {
+            //                 let font = epaint::text::FontId::new(12.0, text::FontFamily::Monospace);
+            //                 let txt = &wave_data[i].0;
+            //                 let galley = ui.fonts().layout_no_wrap(txt.to_string(), font, color);
+            //                 let pos = pos2(5.0, i as f32 * 32.0);
+            //                 let anchor = Align2::CENTER_CENTER;
+            //                 let rect = anchor.anchor_rect(Rect::from_min_size(pos, galley.size()));
+            //                 shapes.push(Shape::galley(rect.min, galley));
+            //                 // ui.set_height(32.0 - 12.0);
+            //                 // ui.label(&wave_data[i].0);
+            //             // });
+            //         }
+            //     // });
+            // // })
+            // // .inner;
+            // ui.painter().extend(shapes);
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
             // The central panel the region left after adding TopPanel's and SidePanel's
-            ui.heading("eframe template");
+            // ui.heading("eframe template");
 
             let clip_rect = ui.clip_rect();
             let min_rect = ui.min_rect();
@@ -154,6 +220,8 @@ impl epi::App for TemplateApp {
             let row_height_with_spacing = row_height_sans_spacing + spacing.y;
 
             scroll_area.show_viewport(ui, |ui, viewport| {
+                // main_viewport.set(Some(viewport));
+                *y_offset = viewport.min.y;
                 ui.set_height((row_height_with_spacing * num_rows as f32 - spacing.y).at_least(0.0));
                 let min_row = (viewport.min.y / row_height_with_spacing)
                     .floor()

@@ -172,9 +172,9 @@ fn header_vars(items: &[vcd::ScopeItem]) -> Vec<ScopedVar> {
 
     items.iter().for_each(|item| add_scopes(&mut vars, &[], item));
 
-    for var in &vars {
-        eprintln!("var = {var:?}");
-    }
+    // for var in &vars {
+    //     eprintln!("var = {var:?}");
+    // }
 
     vars
 }
@@ -227,6 +227,9 @@ pub fn read_clocked_vcd(r: &mut impl io::Read) -> std::io::Result<(Vec<(ScopedVa
          // } else {
          //     eprintln!("id {i:?} not found");
          // }
+       }
+       ChangeString(_i, s) => {
+           eprintln!("I saw a ChangeString '{s}'");
        }
        _ => (),
      }
