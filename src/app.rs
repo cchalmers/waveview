@@ -21,7 +21,7 @@ impl TemplateApp {
                 let mut name: String =
                     itertools::intersperse(var.scopes.iter().map(|x| x.1.as_str()), ".").collect();
                 if !name.is_empty() {
-                    name.push_str(".");
+                    name.push('.');
                 }
                 name.push_str(&var.var.reference);
                 // let bools = sig.scalars().map(|(_, v)| v == vcd::Value::V1).collect();
@@ -164,11 +164,11 @@ impl epi::App for TemplateApp {
                                                  // ui.vertical_centered(|ui| {
                 ui.with_layout(egui::Layout::top_down(egui::Align::Max), |ui| {
                     ui.scope(|ui| ui.set_height(16.0 + 24.0));
-                    for i in min_row..max_row {
+                    for d in wave_data.iter().take(max_row).skip(min_row) {
                         ui.scope(|ui| {
                             // ui.set_height(32.0 - 12.0);
                             ui.set_height(32.0);
-                            ui.label(&wave_data[i].0);
+                            ui.label(&d.0);
                         });
                     }
                 });
@@ -269,7 +269,7 @@ impl epi::App for TemplateApp {
                                 / *x_scale
                         });
                         ui.vertical(|ui| {
-                            for i in min_row..max_row {
+                            for d in wave_data.iter().take(max_row).skip(min_row) {
                                 let name = format!(
                                     "{}
 hover_pos: {hover_pos:?}
@@ -280,13 +280,13 @@ viewport: {viewport:?}
 x_frac: {x_frac:?}
 x_val: {x_val:?}
 x_scale: {x_scale:?}",
-                                    wave_data[i].0
+                                    d.0
                                 );
                                 let wave = wave::Wave::new(
                                     &name,
                                     *x_scale,
                                     viewport.min.x..=viewport.max.x,
-                                    &wave_data[i].1,
+                                    &d.1,
                                 );
                                 // wave.ui(ui, &ctx.fonts());
                                 wave.ui(ui);
@@ -305,19 +305,17 @@ x_scale: {x_scale:?}",
                                     *x_scale = 0.001;
                                 } else if *x_scale > 100.0 {
                                     *x_scale = 100.0;
-                                } else {
-                                    if let Some(x_frac) = x_frac {
-                                        let offset = zoom * viewport.min.x
-                                            + (zoom - 1.0) * x_frac * view_width;
-                                        // the scoll area doesn't like it a negative offset or a
-                                        // positive offset when there's nothing to scroll
-                                        if offset < 0.0
-                                            || (*final_time as f32) * *x_scale * 32.0 < view_width
-                                        {
-                                            *x_offset = Some(0.0);
-                                        } else {
-                                            *x_offset = Some(offset);
-                                        }
+                                } else if let Some(x_frac) = x_frac {
+                                    let offset =
+                                        zoom * viewport.min.x + (zoom - 1.0) * x_frac * view_width;
+                                    // the scoll area doesn't like it a negative offset or a
+                                    // positive offset when there's nothing to scroll
+                                    if offset < 0.0
+                                        || (*final_time as f32) * *x_scale * 32.0 < view_width
+                                    {
+                                        *x_offset = Some(0.0);
+                                    } else {
+                                        *x_offset = Some(offset);
                                     }
                                 }
                             } else {

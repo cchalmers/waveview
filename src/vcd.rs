@@ -54,7 +54,7 @@ impl Signal {
             map: &self.ix,
             range,
             values: match &self.values {
-                SignalValues::Values(vs) => &vs,
+                SignalValues::Values(vs) => vs,
                 // _ => panic!("bit_range"),
             },
         }
@@ -70,8 +70,7 @@ impl Signal {
                 vs.push(value);
                 let ix = vs.len() - 1;
                 self.ix.insert(time, ix);
-            }
-            // _ => panic!("insert_bit into non-value"),
+            } // _ => panic!("insert_bit into non-value"),
         }
     }
 

@@ -184,13 +184,12 @@ impl<'a> Wave<'a> {
 
         let stroke = Stroke::new(2.0, Color32::from_additive_luminance(196));
 
-        let mut shapes = vec![];
-        shapes.push(Shape::line(
+        let shapes = vec![Shape::line(
             pts.iter()
                 .map(|v| pos_from_val(*v, rect, wave_data.final_time() as usize))
                 .collect(),
             stroke,
-        ));
+        )];
 
         // if scale > 0.6 {
         //     let mut x = first_ix as f32 + 0.5;
