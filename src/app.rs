@@ -341,7 +341,7 @@ x_scale: {x_scale:?}",
 
                     let rounded_x = rect.min.x + t_rounded * *x_scale * 32.0;
                     let p0 = pos2(rounded_x, max_rect.min.y + 0.0);
-                    let p1 = pos2(rounded_x, 800.0);
+                    let p1 = pos2(rounded_x, max_rect.max.y);
                     let stroke = Stroke::new(1.0, Color32::YELLOW);
                     shapes.push(Shape::line_segment([p0, p1], stroke));
                     ui.painter().extend(shapes);
