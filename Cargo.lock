@@ -658,6 +658,7 @@ dependencies = [
  "eframe",
  "indexmap",
  "itertools",
+ "log",
  "serde",
  "tracing-wasm",
  "vcd",

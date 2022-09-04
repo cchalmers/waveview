@@ -1,7 +1,7 @@
-use std::ops::RangeInclusive;
-use egui::widgets::plot::Value;
 use eframe::egui;
+use egui::widgets::plot::Value;
 use egui::*;
+use std::ops::RangeInclusive;
 // use std::ops::RangeInclusive;
 use crate::vcd;
 
@@ -43,9 +43,14 @@ pub struct Wave<'a> {
 //     pts
 // }
 
-impl <'a> Wave<'a> {
+impl<'a> Wave<'a> {
     // pub fn new(name: &'a str, scale: f32, view_range: RangeInclusive<f32>, wave_data: &'a [bool]) -> Self {
-    pub fn new(name: &'a str, scale: f32, view_range: RangeInclusive<f32>, wave_data: &'a vcd::Signal) -> Self {
+    pub fn new(
+        name: &'a str,
+        scale: f32,
+        view_range: RangeInclusive<f32>,
+        wave_data: &'a vcd::Signal,
+    ) -> Self {
         Wave {
             scale,
             view_range,
@@ -61,14 +66,18 @@ impl <'a> Wave<'a> {
             view_range,
             height,
             wave_data,
-            name: _,
+            name,
         } = self;
+        log::trace!("Wave::new({name})");
 
         let unscaled_unit_width = 32.0;
 
         // let width = range.end() - range.start();
         let total_wave_width = scale * wave_data.final_time() as f32;
-        let (rect, _response) = ui.allocate_exact_size(vec2(total_wave_width * unscaled_unit_width, height), Sense::drag());
+        let (rect, _response) = ui.allocate_exact_size(
+            vec2(total_wave_width * unscaled_unit_width, height),
+            Sense::drag(),
+        );
         // let response = response.on_hover_ui_at_pointer(|ui| {ui.add(egui::widgets::Label::new(name));});
 
         if wave_data.is_empty() {
@@ -176,7 +185,12 @@ impl <'a> Wave<'a> {
         let stroke = Stroke::new(2.0, Color32::from_additive_luminance(196));
 
         let mut shapes = vec![];
-        shapes.push(Shape::line(pts.iter().map(|v| pos_from_val(*v, rect, wave_data.final_time() as usize)).collect(), stroke));
+        shapes.push(Shape::line(
+            pts.iter()
+                .map(|v| pos_from_val(*v, rect, wave_data.final_time() as usize))
+                .collect(),
+            stroke,
+        ));
 
         // if scale > 0.6 {
         //     let mut x = first_ix as f32 + 0.5;
@@ -222,8 +236,6 @@ impl <'a> Wave<'a> {
         // ui.painter().sub_region(*transform.frame()).extend(shapes);
         ui.painter().extend(shapes);
 
-
         // response
     }
 }
-

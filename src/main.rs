@@ -8,7 +8,8 @@
 fn main() {
     color_eyre::install().unwrap();
     // let mut file = std::fs::File::open("/Users/chris/Dev/egui/eframe_template/clkdiv2n_tb.vcd").unwrap();
-    let mut file = std::fs::File::open("/Users/chris/Dev/egui/eframe_template/mlp512b4c1.vcd").unwrap();
+    let mut file =
+        std::fs::File::open("/Users/chris/Dev/egui/eframe_template/mlp512b4c1.vcd").unwrap();
     let (signals, time) = eframe_template::vcd::read_clocked_vcd(&mut file).unwrap();
     // signals.iter().for_each(|sig| eprintln!("{:?}", sig.0.scopes));
     // eprintln!("{signals:?}");
