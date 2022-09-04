@@ -19,7 +19,6 @@ crate-type = ["cdylib", "rlib"]
 eframe = "0.17.0" # Gives us egui, epi and web+native backends
 color-eyre = "*"
 vcd = "*"
-rand = "*"
 itertools = "*"
 indexmap = "*"
 
