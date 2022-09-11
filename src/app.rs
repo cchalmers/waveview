@@ -113,6 +113,15 @@ impl eframe::App for TemplateApp {
             // The top panel is often a good place for a menu bar:
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
+                    if ui.button("Open…").clicked() {
+                        if let Some(path) = rfd::FileDialog::new().pick_file() {
+                            let mut file = std::fs::File::open(path).unwrap();
+                            let (sigs, time) = vcd::read_clocked_vcd(&mut file).unwrap();
+                            *final_time = time;
+                            *wave_data = mk_wave_data(sigs);
+                            ui.close_menu();
+                        }
+                    }
                     if ui.button("Quit").clicked() {
                         frame.close();
                     }
@@ -415,6 +424,22 @@ x_scale: {x_scale:?}",
     }
 }
 
+fn mk_wave_data(sigs: Vec<(vcd::ScopedVar, vcd::Signal)>) -> Vec<(String, vcd::Signal)> {
+    sigs.into_iter()
+        .map(|(var, sig)| {
+            let mut name: String =
+                itertools::intersperse(var.scopes.iter().map(|x| x.1.as_str()), ".").collect();
+            if !name.is_empty() {
+                name.push('.');
+            }
+            name.push_str(&var.var.reference);
+            // let bools = sig.scalars().map(|(_, v)| v == vcd::Value::V1).collect();
+            // eprintln!("bools = {bools:?}");
+            (name, sig)
+        })
+        .collect()
+}
+
 impl TemplateApp {
     fn ui_file_drag_and_drop(&mut self, ctx: &egui::Context) {
         use egui::*;
@@ -457,22 +482,7 @@ impl TemplateApp {
                 let mut file = std::fs::File::open(path).unwrap();
                 let (sigs, time) = vcd::read_clocked_vcd(&mut file).unwrap();
                 self.final_time = time;
-                // self.signals =
-                self.wave_data = sigs
-                    .into_iter()
-                    .map(|(var, sig)| {
-                        let mut name: String =
-                            itertools::intersperse(var.scopes.iter().map(|x| x.1.as_str()), ".")
-                                .collect();
-                        if !name.is_empty() {
-                            name.push('.');
-                        }
-                        name.push_str(&var.var.reference);
-                        // let bools = sig.scalars().map(|(_, v)| v == vcd::Value::V1).collect();
-                        // eprintln!("bools = {bools:?}");
-                        (name, sig)
-                    })
-                    .collect();
+                self.wave_data = mk_wave_data(sigs);
             }
         }
     }

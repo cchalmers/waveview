@@ -22,6 +22,7 @@ vcd = "*"
 itertools = "*"
 indexmap = "*"
 log = "*"
+rfd = "*"
 
 serde = { version = "1", features = ["derive"], optional = true }
 
