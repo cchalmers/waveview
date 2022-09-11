@@ -1,5 +1,5 @@
 use eframe::egui;
-use egui::widgets::plot::Value;
+use egui::widgets::plot::PlotPoint;
 use egui::*;
 use std::ops::RangeInclusive;
 // use std::ops::RangeInclusive;
@@ -124,49 +124,49 @@ impl<'a> Wave<'a> {
             // x += dx;
             // pts.push(Value::new(x, 0.1));
         }
-        pts.push(Value::new(x, y));
+        pts.push(PlotPoint::new(x, y));
 
         for (t, v) in scalars {
             x = t as f32;
-            pts.push(Value::new(x, y));
+            pts.push(PlotPoint::new(x, y));
             if v == vcd::Value::V1 {
                 y = 0.9
             } else {
                 y = 0.1
             }
-            pts.push(Value::new(x, y));
+            pts.push(PlotPoint::new(x, y));
         }
-        // pts.push(Value::new(x, dy));
+        // pts.push(PlotPoint::new(x, dy));
         // for &h in &wave_data[std::cmp::min(first_data_ix + 1, wave_data.len() - 1)..std::cmp::min(last_data_ix + 1, wave_data.len() - 1)] {
         //     if h {
         //         if last_high {
         //             x += dx;
-        //             pts.push(Value::new(x, dy));
+        //             pts.push(PlotPoint::new(x, dy));
         //         } else {
-        //             pts.push(Value::new(x, dy));
+        //             pts.push(PlotPoint::new(x, dy));
         //             x += dx;
-        //             pts.push(Value::new(x, dy));
+        //             pts.push(PlotPoint::new(x, dy));
         //         }
         //         last_high = true;
         //     } else {
         //         if last_high {
-        //             pts.push(Value::new(x, 0.1));
+        //             pts.push(PlotPoint::new(x, 0.1));
         //             x += dx;
-        //             pts.push(Value::new(x, 0.1));
+        //             pts.push(PlotPoint::new(x, 0.1));
         //         } else {
         //             x += dx;
-        //             pts.push(Value::new(x, 0.1));
+        //             pts.push(PlotPoint::new(x, 0.1));
         //         }
         //         last_high = false;
         //     }
         // }
         // if last_high {
-        //     pts.push(Value::new(last_view_ix as f32, dy));
+        //     pts.push(PlotPoint::new(last_view_ix as f32, dy));
         // } else {
-        //     pts.push(Value::new(last_view_ix as f32, 0.1));
+        //     pts.push(PlotPoint::new(last_view_ix as f32, 0.1));
         // }
 
-        fn pos_from_val(value: Value, rect: Rect, len: usize) -> egui::Pos2 {
+        fn pos_from_val(value: PlotPoint, rect: Rect, len: usize) -> egui::Pos2 {
             let x = remap(
                 value.x as f32,
                 // range,

@@ -1,7 +1,7 @@
 use crate::vcd;
 use crate::wave;
+use eframe::egui;
 use eframe::egui::NumExt;
-use eframe::{egui, epi};
 
 pub struct TemplateApp {
     // wave_data: Vec<(String, Vec<bool>)>,
@@ -10,6 +10,7 @@ pub struct TemplateApp {
     final_time: u64,
     x_offset: Option<f32>,
     y_offset: f32,
+    dropped_files: Vec<egui::DroppedFile>,
     main_viewport: egui::Rect,
 }
 
@@ -35,6 +36,7 @@ impl TemplateApp {
             x_scale: 3.0,
             x_offset: None,
             y_offset: 0.0,
+            dropped_files: vec![],
             main_viewport: egui::Rect::from_min_size(
                 egui::pos2(0.0, 0.0),
                 egui::vec2(100.0, 800.0),
@@ -63,23 +65,23 @@ impl TemplateApp {
 //     }
 // }
 
-impl epi::App for TemplateApp {
-    fn name(&self) -> &str {
-        "eframe template"
-    }
+impl eframe::App for TemplateApp {
+    // fn name(&self) -> &str {
+    //     "eframe template"
+    // }
 
-    /// Called once before the first frame.
-    fn setup(
-        &mut self,
-        _ctx: &egui::Context,
-        _frame: &epi::Frame,
-        _storage: Option<&dyn epi::Storage>,
-    ) {
-        // #[cfg(feature = "persistence")]
-        // if let Some(storage) = _storage {
-        //     *self = epi::get_value(storage, epi::APP_KEY).unwrap_or_default()
-        // }
-    }
+    // /// Called once before the first frame.
+    // fn setup(
+    //     &mut self,
+    //     _ctx: &egui::Context,
+    //     _frame: &epi::Frame,
+    //     _storage: Option<&dyn epi::Storage>,
+    // ) {
+    //     // #[cfg(feature = "persistence")]
+    //     // if let Some(storage) = _storage {
+    //     //     *self = epi::get_value(storage, epi::APP_KEY).unwrap_or_default()
+    //     // }
+    // }
 
     /// Called by the frame work to save state before shutdown.
     /// Note that you must enable the `persistence` feature for this to work.
@@ -90,7 +92,7 @@ impl epi::App for TemplateApp {
 
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
-    fn update(&mut self, ctx: &egui::Context, frame: &epi::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         // let Self { label, value } = self;
         let Self {
             wave_data,
@@ -98,6 +100,7 @@ impl epi::App for TemplateApp {
             x_scale,
             x_offset,
             y_offset,
+            dropped_files: _,
             main_viewport,
         } = self;
 
@@ -111,7 +114,7 @@ impl epi::App for TemplateApp {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("Quit").clicked() {
-                        frame.quit();
+                        frame.close();
                     }
                 });
             });
@@ -399,6 +402,8 @@ x_scale: {x_scale:?}",
             });
         });
 
+        self.ui_file_drag_and_drop(ctx);
+
         if false {
             egui::Window::new("Window").show(ctx, |ui| {
                 ui.label("Windows can be moved by dragging them.");
@@ -406,6 +411,69 @@ x_scale: {x_scale:?}",
                 ui.label("You can turn on resizing and scrolling if you like.");
                 ui.label("You would normally chose either panels OR windows.");
             });
+        }
+    }
+}
+
+impl TemplateApp {
+    fn ui_file_drag_and_drop(&mut self, ctx: &egui::Context) {
+        use egui::*;
+
+        // Preview hovering files:
+        if !ctx.input().raw.hovered_files.is_empty() {
+            let mut text = "Dropping files:\n".to_owned();
+            for file in &ctx.input().raw.hovered_files {
+                if let Some(path) = &file.path {
+                    text += &format!("\n{}", path.display());
+                } else if !file.mime.is_empty() {
+                    text += &format!("\n{}", file.mime);
+                } else {
+                    text += "\n???";
+                }
+            }
+
+            let painter =
+                ctx.layer_painter(LayerId::new(Order::Foreground, Id::new("file_drop_target")));
+
+            let screen_rect = ctx.input().screen_rect();
+            painter.rect_filled(screen_rect, 0.0, Color32::from_black_alpha(192));
+            painter.text(
+                screen_rect.center(),
+                Align2::CENTER_CENTER,
+                text,
+                egui::FontId::default(),
+                Color32::WHITE,
+            );
+        }
+
+        // Collect dropped files:
+        if !ctx.input().raw.dropped_files.is_empty() {
+            self.dropped_files = ctx.input().raw.dropped_files.clone();
+        }
+
+        // Show dropped files (if any):
+        if !self.dropped_files.is_empty() {
+            if let Some(path) = &self.dropped_files[0].path {
+                let mut file = std::fs::File::open(path).unwrap();
+                let (sigs, time) = vcd::read_clocked_vcd(&mut file).unwrap();
+                self.final_time = time;
+                // self.signals =
+                self.wave_data = sigs
+                    .into_iter()
+                    .map(|(var, sig)| {
+                        let mut name: String =
+                            itertools::intersperse(var.scopes.iter().map(|x| x.1.as_str()), ".")
+                                .collect();
+                        if !name.is_empty() {
+                            name.push('.');
+                        }
+                        name.push_str(&var.var.reference);
+                        // let bools = sig.scalars().map(|(_, v)| v == vcd::Value::V1).collect();
+                        // eprintln!("bools = {bools:?}");
+                        (name, sig)
+                    })
+                    .collect();
+            }
         }
     }
 }

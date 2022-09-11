@@ -237,7 +237,7 @@ pub fn read_clocked_vcd(r: &mut impl io::Read) -> std::io::Result<(Vec<(ScopedVa
                 signal.insert_bit(time, v);
             }
             ChangeVector(_i, _v) => {
-                panic!("can't change vector yet");
+                // panic!("can't change vector yet");
                 // if let Some(signal) = signal_map.get_mut(&i) {
                 //    // signal.insert(time, v);
                 // } else {
