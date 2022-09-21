@@ -529,22 +529,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "eframe_template"
-version = "0.1.0"
-dependencies = [
- "color-eyre",
- "console_error_panic_hook",
- "eframe",
- "indexmap",
- "itertools",
- "log",
- "rfd",
- "serde",
- "tracing-wasm",
- "vcd",
-]
-
-[[package]]
 name = "egui"
 version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2022,6 +2006,22 @@ name = "wasm-bindgen-shared"
 version = "0.2.82"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6598dd0bd3c7d51095ff6531a5b23e02acdc81804e30d8f07afb77b7215a140a"
+
+[[package]]
+name = "waveview"
+version = "0.1.0"
+dependencies = [
+ "color-eyre",
+ "console_error_panic_hook",
+ "eframe",
+ "indexmap",
+ "itertools",
+ "log",
+ "rfd",
+ "serde",
+ "tracing-wasm",
+ "vcd",
+]
 
 [[package]]
 name = "wayland-client"

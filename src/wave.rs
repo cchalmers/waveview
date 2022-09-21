@@ -83,7 +83,7 @@ impl<'a> Wave<'a> {
         if wave_data.is_empty() {
             return;
         }
-        let wave_painter = ui.painter().sub_region(rect);
+        let wave_painter = ui.painter().with_clip_rect(rect);
 
         let show_background = true;
         if show_background {

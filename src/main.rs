@@ -19,8 +19,8 @@ fn main() {
             let mut file =
                 std::fs::File::open("/Users/chris/Dev/egui/eframe_template/mlp512b4c1.vcd")
                     .unwrap();
-            let (signals, time) = eframe_template::vcd::read_clocked_vcd(&mut file).unwrap();
-            Box::new(eframe_template::TemplateApp::new(signals, time))
+            let (signals, time) = waveview::vcd::read_clocked_vcd(&mut file).unwrap();
+            Box::new(waveview::TemplateApp::new(signals, time))
         }),
     );
 }
