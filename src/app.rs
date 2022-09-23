@@ -113,7 +113,8 @@ impl eframe::App for TemplateApp {
             // The top panel is often a good place for a menu bar:
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
-                    if ui.button("Open…").clicked() {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    if ui.button("Open File…").clicked() {
                         if let Some(path) = rfd::FileDialog::new().pick_file() {
                             let mut file = std::fs::File::open(path).unwrap();
                             let (sigs, time) = vcd::read_clocked_vcd(&mut file).unwrap();
@@ -122,9 +123,15 @@ impl eframe::App for TemplateApp {
                             ui.close_menu();
                         }
                     }
+                    if ui.button("Open URL…").clicked() {
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
                     if ui.button("Quit").clicked() {
                         frame.close();
                     }
+                    // annoying warning
+                    #[cfg(target_arch = "wasm32")]
+                    let _ = &frame;
                 });
             });
         });
@@ -483,7 +490,13 @@ impl TemplateApp {
                 let (sigs, time) = vcd::read_clocked_vcd(&mut file).unwrap();
                 self.final_time = time;
                 self.wave_data = mk_wave_data(sigs);
+            } else if let Some(bytes) = &self.dropped_files[0].bytes {
+                let mut cursor = std::io::Cursor::new(&bytes);
+                let (sigs, time) = vcd::read_clocked_vcd(&mut cursor).unwrap();
+                self.final_time = time;
+                self.wave_data = mk_wave_data(sigs);
             }
+
         }
     }
 }

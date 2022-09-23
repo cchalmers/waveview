@@ -1,6 +1,7 @@
 {
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-22.05";
+    # nixpkgs.url = "github:NixOS/nixpkgs/nixos-22.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/master";
     flake-utils.url = "github:numtide/flake-utils";
 
     cargo2nix.url = "github:cargo2nix/cargo2nix/release-0.11.0";
@@ -26,6 +27,8 @@
     in with pkgs; {
       devShell = mkShell {
         buildInputs = [
+          trunk
+          wasm-bindgen-cli
           libiconv
           darwin.apple_sdk.frameworks.AppKit
           cargo2nix.packages.${system}.cargo2nix
