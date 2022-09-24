@@ -3,9 +3,17 @@
 #![warn(clippy::all, rust_2018_idioms)]
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] //Hide console window in release builds on Windows, this blocks stdout.
 
+use clap::Parser;
+
+#[derive(Parser)]
+struct Opt {
+    starting_file: Option<std::path::PathBuf>,
+}
+
 // When compiling natively:
 #[cfg(not(target_arch = "wasm32"))]
 fn main() {
+    let opt = Opt::from_args();
     color_eyre::install().unwrap();
     // let mut file = std::fs::File::open("/Users/chris/Dev/egui/eframe_template/clkdiv2n_tb.vcd").unwrap();
     // signals.iter().for_each(|sig| eprintln!("{:?}", sig.0.scopes));
@@ -18,10 +26,13 @@ fn main() {
     eframe::run_native(
         "waveview",
         native_options,
-        Box::new(|_cc| {
-            let mut file =
-                std::fs::File::open("/Users/chris/Dev/egui/waveview/mlp512b4c1.vcd")
-                    .unwrap();
+        Box::new(move |_cc| {
+            // let path = opt.starting_file.().unwrap_or();
+            let mut file = if let Some(path) = &opt.starting_file {
+                std::fs::File::open(path).unwrap()
+            } else {
+                std::fs::File::open("/Users/chris/Dev/egui/waveview/mlp512b4c1.vcd").unwrap()
+            };
             let (signals, time) = waveview::vcd::read_clocked_vcd(&mut file).unwrap();
             Box::new(waveview::TemplateApp::new(signals, time))
         }),

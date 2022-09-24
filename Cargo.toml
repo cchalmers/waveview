@@ -27,6 +27,7 @@ rfd = "*"
 futures = { version = "*", features = ["executor"] }
 tracing = "*"
 tracing-subscriber = "*"
+clap = { version = "3", features = [ "derive" ] }
 
 serde = { version = "1", features = ["derive"], optional = true }
 

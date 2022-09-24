@@ -3,8 +3,8 @@ use crate::wave;
 use eframe::egui;
 use eframe::egui::NumExt;
 
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
 
 use std::future::Future;
 use std::task::Poll;
@@ -55,7 +55,10 @@ impl TemplateApp {
             a_future: None,
             open_file_ctx: None,
             download: Arc::new(Mutex::new(Download::None)),
-            url_window: UrlWindow { url: "https://raw.githubusercontent.com/emilk/ehttp/master/README.md".to_owned(), open: false },
+            url_window: UrlWindow {
+                url: "https://raw.githubusercontent.com/emilk/ehttp/master/README.md".to_owned(),
+                open: false,
+            },
         }
     }
 }
@@ -92,7 +95,8 @@ enum Download {
 // enough to make one that triggers a redraw on wake. It assumes the app is always alive so it
 // doesn't have to deal with reference counting.
 
-const RAW_WAKER_VTABLE: std::task::RawWakerVTable = std::task::RawWakerVTable::new(my_clone, my_wake_by_ref, my_wake_by_ref, my_drop);
+const RAW_WAKER_VTABLE: std::task::RawWakerVTable =
+    std::task::RawWakerVTable::new(my_clone, my_wake_by_ref, my_wake_by_ref, my_drop);
 
 struct OpenedVcd {
     // filename: String,
@@ -109,14 +113,13 @@ unsafe fn my_clone(ctx: *const ()) -> std::task::RawWaker {
     std::task::RawWaker::new(ctx, &RAW_WAKER_VTABLE)
 }
 
-unsafe fn my_wake_by_ref(ctx: *const()) {
+unsafe fn my_wake_by_ref(ctx: *const ()) {
     let ctx: &OpenFileCtx = &*(ctx as *const OpenFileCtx);
     ctx.awoken.store(true, std::sync::atomic::Ordering::Release);
     ctx.egui_ctx.request_repaint();
 }
 
-unsafe fn my_drop(_: *const()) {
-}
+unsafe fn my_drop(_: *const ()) {}
 
 fn new_waker(ctx: &OpenFileCtx) -> std::task::RawWaker {
     std::task::RawWaker::new(ctx as *const OpenFileCtx as *const (), &RAW_WAKER_VTABLE)
@@ -213,7 +216,13 @@ impl eframe::App for TemplateApp {
                     *dl = Download::None;
                 }
                 Download::Done(Ok(res)) => {
-                    tracing::event!(tracing::Level::INFO, "response: url = {}, status = {}, headers = {:?}", res.url, res.status, res.headers);
+                    tracing::event!(
+                        tracing::Level::INFO,
+                        "response: url = {}, status = {}, headers = {:?}",
+                        res.url,
+                        res.status,
+                        res.headers
+                    );
                     let bytes = &res.bytes;
                     let mut cursor = std::io::Cursor::new(bytes);
                     let (signals, time) = vcd::read_clocked_vcd(&mut cursor).unwrap();
@@ -227,9 +236,13 @@ impl eframe::App for TemplateApp {
         if let Some(future) = a_future {
             if open_file_ctx.is_none() {
                 let awoken = Arc::new(AtomicBool::new(false));
-                *open_file_ctx = Some(OpenFileCtx { awoken, egui_ctx: ctx.clone() });
+                *open_file_ctx = Some(OpenFileCtx {
+                    awoken,
+                    egui_ctx: ctx.clone(),
+                });
             }
-            let waker = unsafe { std::task::Waker::from_raw(new_waker(open_file_ctx.as_ref().unwrap())) };
+            let waker =
+                unsafe { std::task::Waker::from_raw(new_waker(open_file_ctx.as_ref().unwrap())) };
             let mut my_ctx = std::task::Context::from_waker(&waker);
             match Future::poll(future.as_mut(), &mut my_ctx) {
                 Poll::Pending => (),
@@ -653,7 +666,6 @@ impl TemplateApp {
                 self.final_time = time;
                 self.wave_data = mk_wave_data(sigs);
             }
-
         }
     }
 }
