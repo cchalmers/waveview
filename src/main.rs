@@ -11,6 +11,9 @@ fn main() {
     // signals.iter().for_each(|sig| eprintln!("{:?}", sig.0.scopes));
     // eprintln!("{signals:?}");
     // let app = eframe_template::TemplateApp::new(signals, time);
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .init();
     let native_options = eframe::NativeOptions::default();
     eframe::run_native(
         "waveview",

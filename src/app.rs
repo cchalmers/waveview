@@ -3,7 +3,7 @@ use crate::wave;
 use eframe::egui;
 use eframe::egui::NumExt;
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::AtomicBool;
 
 use std::future::Future;
@@ -21,6 +21,8 @@ pub struct TemplateApp {
     // a_future: Option<std::pin::Pin<Box<dyn Future<Output = Option<rfd::FileHandle>>>>>,
     a_future: Option<std::pin::Pin<Box<dyn Future<Output = Option<OpenedVcd>>>>>,
     open_file_ctx: Option<OpenFileCtx>,
+    download: Arc<Mutex<Download>>,
+    url_window: UrlWindow,
 }
 
 impl TemplateApp {
@@ -52,8 +54,16 @@ impl TemplateApp {
             ),
             a_future: None,
             open_file_ctx: None,
+            download: Arc::new(Mutex::new(Download::None)),
+            url_window: UrlWindow { url: "https://raw.githubusercontent.com/emilk/ehttp/master/README.md".to_owned(), open: false },
         }
     }
+}
+
+enum Download {
+    None,
+    InProgress,
+    Done(ehttp::Result<ehttp::Response>),
 }
 
 // impl Default for TemplateApp {
@@ -112,6 +122,44 @@ fn new_waker(ctx: &OpenFileCtx) -> std::task::RawWaker {
     std::task::RawWaker::new(ctx as *const OpenFileCtx as *const (), &RAW_WAKER_VTABLE)
 }
 
+struct UrlWindow {
+    url: String,
+    open: bool,
+}
+
+impl UrlWindow {
+    fn show(&mut self, ctx: &egui::Context, download: &Arc<Mutex<Download>>) {
+        if self.open {
+            let window = egui::Window::new("Open URL")
+                .id(egui::Id::new("open_url"))
+                .resizable(false)
+                .collapsible(false)
+                .title_bar(true)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]);
+            window.show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("url:");
+                    ui.text_edit_singleline(&mut self.url);
+                });
+                ui.horizontal(|ui| {
+                    if ui.button("fetch").clicked() {
+                        let request = ehttp::Request::get(&self.url);
+                        let dl = download.clone();
+                        *dl.lock().unwrap() = Download::InProgress;
+                        let ctx2 = ctx.clone();
+                        ehttp::fetch(request, move |response| {
+                            *dl.lock().unwrap() = Download::Done(response);
+                            ctx2.request_repaint();
+                        });
+                        ctx.request_repaint();
+                        self.open = false;
+                    }
+                });
+            });
+        }
+    }
+}
+
 impl eframe::App for TemplateApp {
     // fn name(&self) -> &str {
     //     "eframe template"
@@ -151,7 +199,30 @@ impl eframe::App for TemplateApp {
             main_viewport,
             a_future,
             open_file_ctx,
+            download,
+            url_window,
         } = self;
+
+        {
+            let mut dl = download.lock().unwrap();
+            match &*dl {
+                Download::None => (),
+                Download::InProgress => eprintln!("in progress"),
+                Download::Done(Err(res)) => {
+                    tracing::event!(tracing::Level::ERROR, "error: {res}");
+                    *dl = Download::None;
+                }
+                Download::Done(Ok(res)) => {
+                    tracing::event!(tracing::Level::INFO, "response: url = {}, status = {}, headers = {:?}", res.url, res.status, res.headers);
+                    let bytes = &res.bytes;
+                    let mut cursor = std::io::Cursor::new(bytes);
+                    let (signals, time) = vcd::read_clocked_vcd(&mut cursor).unwrap();
+                    *wave_data = mk_wave_data(signals);
+                    *final_time = time;
+                    *dl = Download::None;
+                }
+            }
+        }
 
         if let Some(future) = a_future {
             if open_file_ctx.is_none() {
@@ -206,6 +277,8 @@ impl eframe::App for TemplateApp {
                         ctx.request_repaint();
                     }
                     if ui.button("Open URL…").clicked() {
+                        url_window.open = true;
+                        ui.close_menu();
                     }
                     #[cfg(not(target_arch = "wasm32"))]
                     if ui.button("Quit").clicked() {
@@ -217,6 +290,8 @@ impl eframe::App for TemplateApp {
                 });
             });
         });
+
+        url_window.show(ctx, download);
 
         // let main_viewport = std::rc::Rc::new(std::cell::Cell::new(None));
         // let mut main_viewport = None;
