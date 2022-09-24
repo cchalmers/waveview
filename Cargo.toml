@@ -23,6 +23,8 @@ itertools = "*"
 indexmap = "*"
 log = "*"
 rfd = "*"
+futures = { version = "*", features = ["executor"] }
+tracing = "*"
 
 serde = { version = "1", features = ["derive"], optional = true }
 

@@ -3,6 +3,12 @@ use crate::wave;
 use eframe::egui;
 use eframe::egui::NumExt;
 
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+
+use std::future::Future;
+use std::task::Poll;
+
 pub struct TemplateApp {
     // wave_data: Vec<(String, Vec<bool>)>,
     wave_data: Vec<(String, vcd::Signal)>,
@@ -12,6 +18,9 @@ pub struct TemplateApp {
     y_offset: f32,
     dropped_files: Vec<egui::DroppedFile>,
     main_viewport: egui::Rect,
+    // a_future: Option<std::pin::Pin<Box<dyn Future<Output = Option<rfd::FileHandle>>>>>,
+    a_future: Option<std::pin::Pin<Box<dyn Future<Output = Option<OpenedVcd>>>>>,
+    open_file_ctx: Option<OpenFileCtx>,
 }
 
 impl TemplateApp {
@@ -41,6 +50,8 @@ impl TemplateApp {
                 egui::pos2(0.0, 0.0),
                 egui::vec2(100.0, 800.0),
             ),
+            a_future: None,
+            open_file_ctx: None,
         }
     }
 }
@@ -64,6 +75,42 @@ impl TemplateApp {
 //         }
 //     }
 // }
+
+// Custom waker
+//
+// egui doesn't have native support for futures but something simple like opening a file it's easy
+// enough to make one that triggers a redraw on wake. It assumes the app is always alive so it
+// doesn't have to deal with reference counting.
+
+const RAW_WAKER_VTABLE: std::task::RawWakerVTable = std::task::RawWakerVTable::new(my_clone, my_wake_by_ref, my_wake_by_ref, my_drop);
+
+struct OpenedVcd {
+    // filename: String,
+    wave_data: Vec<(String, vcd::Signal)>,
+    time: u64,
+}
+
+struct OpenFileCtx {
+    awoken: Arc<AtomicBool>,
+    egui_ctx: egui::Context,
+}
+
+unsafe fn my_clone(ctx: *const ()) -> std::task::RawWaker {
+    std::task::RawWaker::new(ctx, &RAW_WAKER_VTABLE)
+}
+
+unsafe fn my_wake_by_ref(ctx: *const()) {
+    let ctx: &OpenFileCtx = &*(ctx as *const OpenFileCtx);
+    ctx.awoken.store(true, std::sync::atomic::Ordering::Release);
+    ctx.egui_ctx.request_repaint();
+}
+
+unsafe fn my_drop(_: *const()) {
+}
+
+fn new_waker(ctx: &OpenFileCtx) -> std::task::RawWaker {
+    std::task::RawWaker::new(ctx as *const OpenFileCtx as *const (), &RAW_WAKER_VTABLE)
+}
 
 impl eframe::App for TemplateApp {
     // fn name(&self) -> &str {
@@ -102,7 +149,32 @@ impl eframe::App for TemplateApp {
             y_offset,
             dropped_files: _,
             main_viewport,
+            a_future,
+            open_file_ctx,
         } = self;
+
+        if let Some(future) = a_future {
+            if open_file_ctx.is_none() {
+                let awoken = Arc::new(AtomicBool::new(false));
+                *open_file_ctx = Some(OpenFileCtx { awoken, egui_ctx: ctx.clone() });
+            }
+            let waker = unsafe { std::task::Waker::from_raw(new_waker(open_file_ctx.as_ref().unwrap())) };
+            let mut my_ctx = std::task::Context::from_waker(&waker);
+            match Future::poll(future.as_mut(), &mut my_ctx) {
+                Poll::Pending => (),
+                Poll::Ready(shandle) => {
+                    match shandle {
+                        Some(handle) => {
+                            *wave_data = handle.wave_data;
+                            *final_time = handle.time;
+                        }
+                        None => (),
+                    }
+                    *a_future = None;
+                    *open_file_ctx = None;
+                }
+            }
+        }
 
         // Examples of how to create different panels and windows.
         // Pick whichever suits you.
@@ -113,15 +185,25 @@ impl eframe::App for TemplateApp {
             // The top panel is often a good place for a menu bar:
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
-                    #[cfg(not(target_arch = "wasm32"))]
                     if ui.button("Open File…").clicked() {
-                        if let Some(path) = rfd::FileDialog::new().pick_file() {
-                            let mut file = std::fs::File::open(path).unwrap();
-                            let (sigs, time) = vcd::read_clocked_vcd(&mut file).unwrap();
-                            *final_time = time;
-                            *wave_data = mk_wave_data(sigs);
-                            ui.close_menu();
-                        }
+                        *a_future = Some(Box::pin(async {
+                            let handle = rfd::AsyncFileDialog::new().pick_file().await;
+                            if let Some(h) = &handle {
+                                let bytes = h.read().await;
+                                let mut cursor = std::io::Cursor::new(&bytes);
+                                let (signals, time) = vcd::read_clocked_vcd(&mut cursor).unwrap();
+                                let wave_data = mk_wave_data(signals);
+                                Some(OpenedVcd {
+                                    // filename: h.file_name(),
+                                    wave_data,
+                                    time,
+                                })
+                            } else {
+                                None
+                            }
+                        }));
+                        ui.close_menu();
+                        ctx.request_repaint();
                     }
                     if ui.button("Open URL…").clicked() {
                     }
