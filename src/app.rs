@@ -12,7 +12,7 @@ use std::task::Poll;
 pub struct TemplateApp {
     // wave_data: Vec<(String, Vec<bool>)>,
     wave_data: Vec<(String, vcd::Signal)>,
-    x_scale: f32,
+    x_scale: Option<f32>,
     final_time: u64,
     x_offset: Option<f32>,
     y_offset: f32,
@@ -44,7 +44,7 @@ impl TemplateApp {
         Self {
             wave_data,
             final_time,
-            x_scale: 3.0,
+            x_scale: None, // 3.0,
             x_offset: None,
             y_offset: 0.0,
             dropped_files: vec![],
@@ -431,6 +431,15 @@ impl eframe::App for TemplateApp {
 
                 let rect =
                     egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), y_min + 16.0..=y_max);
+
+                // hackily make initial scale to fit everything (0.95 to handle scroll bar (major
+                // hack))
+                if x_scale.is_none() {
+                    *x_scale = Some(
+                        0.95 * (viewport.max.x - viewport.min.x) / (*final_time as f32 * 32.0),
+                    );
+                }
+                let x_scale = x_scale.as_mut().unwrap();
 
                 let hover_pos = ui
                     .allocate_ui_at_rect(rect, |ui| {
