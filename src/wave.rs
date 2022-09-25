@@ -74,11 +74,13 @@ impl<'a> Wave<'a> {
 
         // let width = range.end() - range.start();
         let total_wave_width = scale * wave_data.final_time() as f32;
-        let (rect, _response) = ui.allocate_exact_size(
+        let (rect, response) = ui.allocate_exact_size(
             vec2(total_wave_width * unscaled_unit_width, height),
             Sense::drag(),
         );
-        // let response = response.on_hover_ui_at_pointer(|ui| {ui.add(egui::widgets::Label::new(name));});
+        let _response = response.on_hover_ui_at_pointer(|ui| {
+            ui.add(egui::widgets::Label::new(name));
+        });
 
         if wave_data.is_empty() {
             return;
