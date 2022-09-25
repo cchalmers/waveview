@@ -106,135 +106,176 @@ impl<'a> Wave<'a> {
         if last_ix <= first_ix {
             return;
         }
-        let mut scalars = wave_data.bit_range(first_ix..last_ix).into_iter();
-        let (t0, v0) = scalars.next().unwrap();
-        let mut x = t0 as f32;
-        let mut y;
-        // let last_data_ix = std::cmp::min(wave_data.final_time(), last_view_ix);
-        // let mut x = t as f32;
-        if v0 == vcd::Value::V1 {
-            // last_high = true;
-            y = 0.9;
-            // pts.push(Value::new(x, dy));
-            // x += dx;
-            // pts.push(Value::new(x, dy));
-        } else {
-            // last_high = false;
-            y = 0.1;
-            // x += dx;
-            // pts.push(Value::new(x, 0.1));
-        }
-        pts.push(PlotPoint::new(x, y));
-
-        for (t, v) in scalars {
-            x = t as f32;
-            pts.push(PlotPoint::new(x, y));
-            if v == vcd::Value::V1 {
-                y = 0.9
+        // TODO
+        //
+        // - undefined values should be visible
+        // - the last signal at the end of the simulation should be visible (currently it gets cut
+        //   off)
+        if wave_data.width() == 1 {
+            let mut scalars = wave_data.bit_range(first_ix..last_ix).into_iter();
+            let (t0, v0) = scalars.next().unwrap();
+            let mut x = t0 as f32;
+            let mut y;
+            // let last_data_ix = std::cmp::min(wave_data.final_time(), last_view_ix);
+            // let mut x = t as f32;
+            if v0 == vcd::Value::V1 {
+                // last_high = true;
+                y = 0.9;
+                // pts.push(Value::new(x, dy));
+                // x += dx;
+                // pts.push(Value::new(x, dy));
             } else {
-                y = 0.1
+                // last_high = false;
+                y = 0.1;
+                // x += dx;
+                // pts.push(Value::new(x, 0.1));
             }
             pts.push(PlotPoint::new(x, y));
+
+            for (t, v) in scalars {
+                x = t as f32;
+                pts.push(PlotPoint::new(x, y));
+                if v == vcd::Value::V1 {
+                    y = 0.9
+                } else {
+                    y = 0.1
+                }
+                pts.push(PlotPoint::new(x, y));
+            }
+            // pts.push(PlotPoint::new(x, dy));
+            // for &h in &wave_data[std::cmp::min(first_data_ix + 1, wave_data.len() - 1)..std::cmp::min(last_data_ix + 1, wave_data.len() - 1)] {
+            //     if h {
+            //         if last_high {
+            //             x += dx;
+            //             pts.push(PlotPoint::new(x, dy));
+            //         } else {
+            //             pts.push(PlotPoint::new(x, dy));
+            //             x += dx;
+            //             pts.push(PlotPoint::new(x, dy));
+            //         }
+            //         last_high = true;
+            //     } else {
+            //         if last_high {
+            //             pts.push(PlotPoint::new(x, 0.1));
+            //             x += dx;
+            //             pts.push(PlotPoint::new(x, 0.1));
+            //         } else {
+            //             x += dx;
+            //             pts.push(PlotPoint::new(x, 0.1));
+            //         }
+            //         last_high = false;
+            //     }
+            // }
+            // if last_high {
+            //     pts.push(PlotPoint::new(last_view_ix as f32, dy));
+            // } else {
+            //     pts.push(PlotPoint::new(last_view_ix as f32, 0.1));
+            // }
+
+            fn pos_from_val(value: PlotPoint, rect: Rect, len: usize) -> egui::Pos2 {
+                let x = remap(
+                    value.x as f32,
+                    // range,
+                    0.0..=(len as f32),
+                    rect.left()..=rect.right(),
+                    // 0.0..=(32.0),
+                );
+                let y = remap(
+                    value.y as f32,
+                    0.0..=1.0,
+                    rect.bottom()..=rect.top(), // negated y axis!
+                );
+                pos2(x as f32, y as f32)
+            }
+
+            let stroke = Stroke::new(2.0, Color32::from_additive_luminance(196));
+
+            let shapes = vec![Shape::line(
+                pts.iter()
+                    .map(|v| pos_from_val(*v, rect, wave_data.final_time() as usize))
+                    .collect(),
+                stroke,
+            )];
+            ui.painter().extend(shapes);
+        } else {
+            let mut values = wave_data.range(first_ix..last_ix).into_iter();
+            let (t0, _v0) = values.next().unwrap();
+            let mut x = t0 as f32;
+            // let mut y;
+            pts.push(PlotPoint::new(x, 0.9));
+            pts.push(PlotPoint::new(x, 0.1));
+            pts.push(PlotPoint::new(x, 0.9));
+
+            for (t, _) in values {
+                x = t as f32;
+                pts.push(PlotPoint::new(x, 0.9));
+                pts.push(PlotPoint::new(x, 0.1));
+                pts.push(PlotPoint::new(x, 0.9));
+            }
+            fn pos_from_val(value: PlotPoint, rect: Rect, len: usize) -> egui::Pos2 {
+                let x = remap(
+                    value.x as f32,
+                    // range,
+                    0.0..=(len as f32),
+                    rect.left()..=rect.right(),
+                    // 0.0..=(32.0),
+                );
+                let y = remap(
+                    value.y as f32,
+                    0.0..=1.0,
+                    rect.bottom()..=rect.top(), // negated y axis!
+                );
+                pos2(x as f32, y as f32)
+            }
+
+            let stroke = Stroke::new(2.0, Color32::from_additive_luminance(196));
+
+            let mut shapes = vec![Shape::line(
+                pts.iter()
+                    .map(|v| pos_from_val(*v, rect, wave_data.final_time() as usize))
+                    .collect(),
+                stroke,
+            )];
+            if scale > 0.05 {
+                let mut prev = &wave_data[first_ix];
+                // eprintln!("first_ix = {first_ix}, prev = {prev:?}");
+                let mut prev_start_x = first_ix as f32 + 0.5;
+                for (t, vs) in wave_data.range(first_ix + 1..last_ix) {
+                    let x = t as f32;
+                    let pos = pos_from_val(
+                        PlotPoint::new((prev_start_x + x) / 2.0, 0.5),
+                        rect,
+                        wave_data.final_time() as usize,
+                    );
+                    // TODO don't just use debug instance, have different format options
+                    let txt = format!("{prev:?}");
+                    let anchor = Align2::CENTER_CENTER;
+                    // let font = epaint::text::FontId::new(12.0, text::FontFamily::Monospace);
+                    // let sty = TextStyle::Monospace;
+                    let font = epaint::text::FontId::new(12.0, text::FontFamily::Monospace);
+                    let color = Color32::from_additive_luminance(196);
+                    // let fill_color = Color32::from_additive_luminance(40);
+                    // let fill_color = if h { Color32::GREEN.linear_multiply(0.1) } else { Color32::RED.linear_multiply(0.1) };
+                    let fill_color = if true {
+                        Color32::from(Rgba::GREEN.multiply(0.2) + Rgba::from_white_alpha(0.08))
+                    } else {
+                        // Color32::RED.linear_multiply(0.1)
+                        // Color32::from(Rgba::RED.multiply(0.2) + Rgba::from_white_alpha(0.08))
+                        Color32::from(Rgba::RED.multiply(0.3))
+                    };
+
+                    let galley = ui.fonts().layout_no_wrap(txt, font, color);
+                    let rect = anchor.anchor_rect(Rect::from_min_size(pos, galley.size()));
+                    let fill_rect = rect.expand(2.0);
+                    if fill_rect.width() < (x - prev_start_x) * scale * 32.0 {
+                        shapes.push(Shape::rect_filled(fill_rect, 2.0, fill_color));
+                        shapes.push(Shape::galley(rect.min, galley));
+                    }
+                    prev = vs;
+                    prev_start_x = x;
+                }
+            }
+            ui.painter().extend(shapes);
         }
-        // pts.push(PlotPoint::new(x, dy));
-        // for &h in &wave_data[std::cmp::min(first_data_ix + 1, wave_data.len() - 1)..std::cmp::min(last_data_ix + 1, wave_data.len() - 1)] {
-        //     if h {
-        //         if last_high {
-        //             x += dx;
-        //             pts.push(PlotPoint::new(x, dy));
-        //         } else {
-        //             pts.push(PlotPoint::new(x, dy));
-        //             x += dx;
-        //             pts.push(PlotPoint::new(x, dy));
-        //         }
-        //         last_high = true;
-        //     } else {
-        //         if last_high {
-        //             pts.push(PlotPoint::new(x, 0.1));
-        //             x += dx;
-        //             pts.push(PlotPoint::new(x, 0.1));
-        //         } else {
-        //             x += dx;
-        //             pts.push(PlotPoint::new(x, 0.1));
-        //         }
-        //         last_high = false;
-        //     }
-        // }
-        // if last_high {
-        //     pts.push(PlotPoint::new(last_view_ix as f32, dy));
-        // } else {
-        //     pts.push(PlotPoint::new(last_view_ix as f32, 0.1));
-        // }
-
-        fn pos_from_val(value: PlotPoint, rect: Rect, len: usize) -> egui::Pos2 {
-            let x = remap(
-                value.x as f32,
-                // range,
-                0.0..=(len as f32),
-                rect.left()..=rect.right(),
-                // 0.0..=(32.0),
-            );
-            let y = remap(
-                value.y as f32,
-                0.0..=1.0,
-                rect.bottom()..=rect.top(), // negated y axis!
-            );
-            pos2(x as f32, y as f32)
-        }
-
-        let stroke = Stroke::new(2.0, Color32::from_additive_luminance(196));
-
-        let shapes = vec![Shape::line(
-            pts.iter()
-                .map(|v| pos_from_val(*v, rect, wave_data.final_time() as usize))
-                .collect(),
-            stroke,
-        )];
-
-        // if scale > 0.6 {
-        //     let mut x = first_ix as f32 + 0.5;
-        //     let mut prev = wave_data[first_ix];
-        //     let mut prev_start_x = x;
-        //     let last_x = last_ix as f32 - 2.0;
-        //     for &h in &wave_data[first_ix+1..last_ix] {
-        //         if h == prev && x < last_x {
-        //             x += 1.0;
-        //             continue;
-        //         }
-
-        //         let pos = pos_from_val(Value::new((prev_start_x + x)/2.0, 0.5), rect, wave_data.len());
-        //         let txt = if prev {"0xde"} else {"0xbeef"};
-        //         let anchor = Align2::CENTER_CENTER;
-        //         // let font = epaint::text::FontId::new(12.0, text::FontFamily::Monospace);
-        //         // let sty = TextStyle::Monospace;
-        //         let font = epaint::text::FontId::new(12.0, text::FontFamily::Monospace);
-        //         let color = Color32::from_additive_luminance(196);
-        //         // let fill_color = Color32::from_additive_luminance(40);
-        //         // let fill_color = if h { Color32::GREEN.linear_multiply(0.1) } else { Color32::RED.linear_multiply(0.1) };
-        //         let fill_color = if prev {
-        //             Color32::from(Rgba::GREEN.multiply(0.2) + Rgba::from_white_alpha(0.08))
-        //         } else {
-        //             // Color32::RED.linear_multiply(0.1)
-        //             // Color32::from(Rgba::RED.multiply(0.2) + Rgba::from_white_alpha(0.08))
-        //             Color32::from(Rgba::RED.multiply(0.3))
-        //         };
-
-        //         let galley = ui.fonts().layout_no_wrap(txt.to_string(), font, color);
-        //         let rect = anchor.anchor_rect(Rect::from_min_size(pos, galley.size()));
-        //         let fill_rect = rect.expand(2.0);
-        //         if fill_rect.width() < scale * 32.0 {
-        //             shapes.push(Shape::rect_filled(fill_rect, 2.0, fill_color));
-        //             shapes.push(Shape::galley(rect.min, galley));
-        //         }
-        //         x += 1.0;
-        //         prev = h;
-        //         prev_start_x = x;
-        //     }
-        // }
-
-        // ui.painter().sub_region(*transform.frame()).extend(shapes);
-        ui.painter().extend(shapes);
-
-        // response
     }
 }

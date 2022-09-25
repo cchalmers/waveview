@@ -31,12 +31,21 @@ impl Signal {
         }
     }
 
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
     pub fn is_empty(&self) -> bool {
         self.ix.is_empty()
     }
 
     pub fn final_time(&self) -> u64 {
-        *self.ix.iter().next_back().as_ref().unwrap().0
+        self.ix
+            .iter()
+            .next_back()
+            .as_ref()
+            .map(|x| *x.0)
+            .unwrap_or(0)
     }
 
     // pub fn scalars(&self) -> impl Iterator<Item = (u64, Value)> + '_ {
@@ -60,6 +69,17 @@ impl Signal {
         }
     }
 
+    pub fn range(&self, range: std::ops::Range<u64>) -> SignalRange<'_> {
+        SignalRange {
+            map: &self.ix,
+            range,
+            width: self.width,
+            values: match &self.values {
+                SignalValues::Values(vs) => vs,
+            },
+        }
+    }
+
     pub fn insert_bit(&mut self, time: u64, value: Value) {
         if self.width != 1 {
             panic!("insert bit: width {} != 1", self.width);
@@ -74,20 +94,102 @@ impl Signal {
         }
     }
 
-    // pub fn insert(&mut self, time: u64, value: Vec<Value>) {
-    //     if self.width != value.len() {
-    //         eprintln!("{} != {}", self.width, value.len());
-    //     }
-    //     self.values.insert(time, value);
-    // }
+    pub fn insert(&mut self, time: u64, value: Vec<Value>) {
+        eprintln!("insert(time = {time}, value = {value:?})");
+        // if self.width != value.len() {
+        //     eprintln!("{} != {}", self.width, value.len());
+        // }
+        assert!(value.len() <= self.width);
+        match &mut self.values {
+            SignalValues::Values(vs) => {
+                let ix = vs.len();
+                vs.extend(value.iter().cloned());
+                for _ in 0..(self.width - value.len()) {
+                    vs.push(Value::V0);
+                }
+                self.ix.insert(time, ix);
+            }
+        }
+    }
 }
 
-// impl Index<u64> for Signal {
-//     type Output = [Value];
+impl std::ops::Index<u64> for Signal {
+    type Output = [Value];
+    fn index(&self, index: u64) -> &[Value] {
+        self.range(0..index)
+            .into_iter()
+            .next_back()
+            .as_ref()
+            .unwrap()
+            .1
+    }
+}
+
+pub struct SignalRange<'a> {
+    map: &'a BTreeMap<u64, usize>,
+    range: std::ops::Range<u64>,
+    width: usize,
+    values: &'a [Value],
+}
+
+pub struct SignalRangeIter<'a> {
+    iter: btree_map::Range<'a, u64, usize>,
+    width: usize,
+    values: &'a [Value],
+}
+
+impl<'a> Iterator for SignalRangeIter<'a> {
+    type Item = (u64, &'a [Value]);
+    fn next(&mut self) -> Option<Self::Item> {
+        let (t, ix) = self.iter.next()?;
+        // eprintln!("let (t = {t}, ix = {ix}) = self.iter.next()?;");
+        // let max_ix = (self.values.len() / self.width) - 1; // XXX THIS IS WRONG, WHAT'S GOING ON HERE?
+        let start = *ix;
+        let end = start + self.width;
+        Some((*t, &self.values[start..end]))
+    }
+}
+
+impl<'a> DoubleEndedIterator for SignalRangeIter<'a> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        let (t, ix) = self.iter.next_back()?;
+        let start = *ix;
+        let end = start + self.width;
+        Some((*t, &self.values[start..end]))
+    }
+}
+
+// impl<'a> Index<u64> for SignalRange<'a> {
+//     type Output = &'a [Value];
 //     fn index(&self, index: u64) -> &[Value] {
-//         self.values.range(..index).next_back().as_ref().unwrap().1
+//         self.map.range(..index).next_back().as_ref().unwrap().1
 //     }
 // }
+
+impl<'a> IntoIterator for SignalRange<'a> {
+    type Item = (u64, &'a [Value]);
+    type IntoIter = SignalRangeIter<'a>;
+    fn into_iter(self) -> Self::IntoIter {
+        let lower_bound = self
+            .map
+            .range(..self.range.start)
+            .next_back()
+            .as_ref()
+            .map_or(0, |v| *v.0);
+        let upper_bound = self
+            .map
+            .range(self.range.end..)
+            .next()
+            .as_ref()
+            .map_or(u64::MAX - 1, |v| *v.0);
+        let iter = self.map.range(lower_bound..upper_bound + 1);
+        SignalRangeIter {
+            iter,
+            width: self.width,
+            values: self.values,
+        }
+    }
+}
 
 pub struct BitSignalRange<'a> {
     map: &'a BTreeMap<u64, usize>,
@@ -131,28 +233,6 @@ impl<'a> IntoIterator for BitSignalRange<'a> {
         }
     }
 }
-
-// struct SignalRange<'a> {
-//     map: &'a BTreeMap<u64, usize>,
-//     range: std::ops::Range<u64>,
-//     width: usize,
-// }
-
-// impl<'a> Index<u64> for SignalSlice<'a> {
-//     type Output = [Value];
-//     fn index(&self, index: u64) -> &[Value] {
-//         self.map.range(..index).next_back().as_ref().unwrap().1
-//     }
-// }
-
-// impl<'a> IntoIterator for SignalSlice<'a> {
-//     type Item = (&'a u64, &'a Vec<Value>);
-//     type IntoIter = btree_map::Range<'a, u64, Vec<Value>>;
-//     fn into_iter(self) -> Self::IntoIter {
-//         let lower_bound = *self.map.range(..self.range.start).next_back().as_ref().unwrap().0;
-//         self.map.range(lower_bound..self.range.end)
-//     }
-// }
 
 #[derive(Debug)]
 pub struct ScopedVar {
@@ -236,13 +316,13 @@ pub fn read_clocked_vcd(r: &mut impl io::Read) -> std::io::Result<(Vec<(ScopedVa
                 let signal = signal_map.get_mut(&i).unwrap();
                 signal.insert_bit(time, v);
             }
-            ChangeVector(_i, _v) => {
+            ChangeVector(i, v) => {
                 // panic!("can't change vector yet");
-                // if let Some(signal) = signal_map.get_mut(&i) {
-                //    // signal.insert(time, v);
-                // } else {
-                //     eprintln!("id {i:?} not found");
-                // }
+                if let Some(signal) = signal_map.get_mut(&i) {
+                    signal.insert(time, v);
+                } else {
+                    eprintln!("id {i:?} not found");
+                }
             }
             ChangeString(_i, s) => {
                 eprintln!("I saw a ChangeString '{s}'");
