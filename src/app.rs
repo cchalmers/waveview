@@ -56,7 +56,7 @@ impl TemplateApp {
             open_file_ctx: None,
             download: Arc::new(Mutex::new(Download::None)),
             url_window: UrlWindow {
-                url: "https://raw.githubusercontent.com/emilk/ehttp/master/README.md".to_owned(),
+                url: "https://raw.githubusercontent.com/Mohammad-Heydariii/Digital-Systems-Lab-Course/main/Lab_project4/modelsim_files/clkdiv2n_tb.vcd".to_owned(),
                 open: false,
             },
         }
@@ -228,6 +228,7 @@ impl eframe::App for TemplateApp {
                     let (signals, time) = vcd::read_clocked_vcd(&mut cursor).unwrap();
                     *wave_data = mk_wave_data(signals);
                     *final_time = time;
+                    *x_scale = None;
                     *dl = Download::None;
                 }
             }
