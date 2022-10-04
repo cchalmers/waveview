@@ -16,6 +16,7 @@ pub struct TemplateApp {
     final_time: u64,
     x_offset: Option<f32>,
     y_offset: f32,
+    drag_time_start: Option<usize>,
     dropped_files: Vec<egui::DroppedFile>,
     main_viewport: egui::Rect,
     // a_future: Option<std::pin::Pin<Box<dyn Future<Output = Option<rfd::FileHandle>>>>>,
@@ -47,6 +48,7 @@ impl TemplateApp {
             x_scale: None, // 3.0,
             x_offset: None,
             y_offset: 0.0,
+            drag_time_start: None,
             dropped_files: vec![],
             main_viewport: egui::Rect::from_min_size(
                 egui::pos2(0.0, 0.0),
@@ -198,6 +200,7 @@ impl eframe::App for TemplateApp {
             x_scale,
             x_offset,
             y_offset,
+            drag_time_start,
             dropped_files: _,
             main_viewport,
             a_future,
@@ -444,7 +447,7 @@ impl eframe::App for TemplateApp {
                 }
                 let x_scale = x_scale.as_mut().unwrap();
 
-                let hover_pos = ui
+                let wave_resp = ui
                     .allocate_ui_at_rect(rect, |ui| {
                         // let mut max_rect = ui.max_rect();
                         // let mut content_clip_rect = max_rect.expand(ui.visuals().clip_rect_margin);
@@ -525,14 +528,14 @@ x_scale: {x_scale:?}",
                                 *x_offset = None;
                             }
                         }
-                        hover_pos
+                        resp
                     })
                     .inner;
 
                 let yellow = egui::Color32::from_rgb(0xd2, 0x99, 0x1d);
 
                 let mut hover_t = None;
-                if let Some(pos) = &hover_pos {
+                if let Some(pos) = &wave_resp.hover_pos() {
                     use egui::*;
                     let mut shapes = vec![];
                     // let color = Color32::from_additive_luminance(196);
@@ -542,12 +545,36 @@ x_scale: {x_scale:?}",
                     let t_rounded = t.round();
                     hover_t = Some(t_rounded as usize);
 
+                    if wave_resp.drag_started() {
+                        *drag_time_start = hover_t;
+                    }
+
                     let rounded_x = rect.min.x + t_rounded * *x_scale * 32.0;
                     let p0 = pos2(rounded_x, max_rect.min.y + 0.0);
                     let p1 = pos2(rounded_x, max_rect.max.y);
                     let stroke = Stroke::new(2.0, yellow);
                     shapes.push(Shape::line_segment([p0, p1], stroke));
+
+                    if let Some(start_t) = *drag_time_start {
+                        let rounded_x = rect.min.x + (start_t as f32) * *x_scale * 32.0;
+                        let sp0 = pos2(rounded_x, max_rect.min.y + 0.0);
+                        let sp1 = pos2(rounded_x, max_rect.max.y);
+                        let stroke = Stroke::new(2.0, yellow);
+                        shapes.push(Shape::line_segment([sp0, sp1], stroke));
+                        // this is looks like it works when we're scrolled to the top, overwise
+                        // it's below by a few pixels
+                        let pp0 = pos2(rounded_x, max_rect.min.y + 16.0);
+                        shapes.push(Shape::rect_filled(
+                            egui::Rect::from_two_pos(pp0, p1),
+                            egui::Rounding::none(),
+                            yellow.linear_multiply(0.1),
+                        ));
+                    }
                     ui.painter().extend(shapes);
+                }
+
+                if wave_resp.drag_released() {
+                    *drag_time_start = None;
                 }
 
                 let rect = egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), y_min..=16.0);
@@ -566,8 +593,18 @@ x_scale: {x_scale:?}",
                     // in x_min..=x_max {
                     let mut used_i = i;
                     let mut highlight = false;
+                    let mut diff: Option<isize> = None;
                     if let Some(t) = hover_t {
                         // kinda ugly since we'll render twice if midway
+                        if i.abs_diff(t) <= gap / 2 {
+                            used_i = t;
+                            highlight = true;
+                            if let Some(st) = *drag_time_start {
+                                diff = Some((t as isize) - (st as isize))
+                            }
+                        }
+                    }
+                    if let Some(t) = *drag_time_start {
                         if i.abs_diff(t) <= gap / 2 {
                             used_i = t;
                             highlight = true;
@@ -584,15 +621,22 @@ x_scale: {x_scale:?}",
                     ticks.push(egui::Shape::line_segment([p0, p1], stroke));
 
                     use egui::*;
-                    let anchor = Align2::LEFT_CENTER;
                     let font_size = if highlight { 13.0 } else { 12.0 };
                     let font = epaint::text::FontId::new(font_size, text::FontFamily::Monospace);
                     let color = ui.style().visuals.text_color();
 
+                    if let Some(diff) = diff {
+                        let str = format!("{}{diff}", if diff < 0 { "" } else { "+" });
+                        let font = epaint::text::FontId::new(11.0, text::FontFamily::Monospace);
+                        let galley = ui.fonts().layout_no_wrap(str, font, color);
+                        // let rect =
+                        //     Align2::RIGHT_CENTER.anchor_rect(Rect::from_min_size(p0 - galley.size() - vec2(4.0, 0.0), galley.size()));
+                        ticks.push(Shape::galley(p0 - vec2(4.0 + galley.size().x, 0.0), galley));
+                    }
                     let galley = ui.fonts().layout_no_wrap(used_i.to_string(), font, color);
-                    let rect =
-                        anchor.anchor_rect(Rect::from_min_size(p0 + vec2(4.0, 0.0), galley.size()));
-                    ticks.push(Shape::galley(rect.min, galley));
+                    let rect = Align2::LEFT_CENTER
+                        .anchor_rect(Rect::from_min_size(p0 + vec2(4.0, 0.0), galley.size()));
+                    ticks.push(Shape::galley(rect.min + vec2(4.0, 0.0), galley));
                     i += gap;
                 }
                 ui.painter().extend(ticks);

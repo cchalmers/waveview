@@ -241,18 +241,22 @@ impl<'a> Wave<'a> {
 
             let stroke = ui.style().visuals.widgets.active.bg_stroke;
 
-            let mut shapes = vec![Shape::line(
-                pts_a.iter()
-                    .map(|v| pos_from_val(*v, rect, wave_data.final_time() as usize))
-                    .collect(),
-                stroke,
-            ),
-            Shape::line(
-                            pts_b.iter()
-                                .map(|v| pos_from_val(*v, rect, wave_data.final_time() as usize))
-                                .collect(),
-                            stroke,
-                        )];
+            let mut shapes = vec![
+                Shape::line(
+                    pts_a
+                        .iter()
+                        .map(|v| pos_from_val(*v, rect, wave_data.final_time() as usize))
+                        .collect(),
+                    stroke,
+                ),
+                Shape::line(
+                    pts_b
+                        .iter()
+                        .map(|v| pos_from_val(*v, rect, wave_data.final_time() as usize))
+                        .collect(),
+                    stroke,
+                ),
+            ];
             if scale > 0.05 {
                 let mut prev = &wave_data[first_ix];
                 // eprintln!("first_ix = {first_ix}, prev = {prev:?}");
