@@ -190,7 +190,7 @@ impl<'a> Wave<'a> {
                 pos2(x as f32, y as f32)
             }
 
-            let stroke = Stroke::new(2.0, Color32::from_additive_luminance(196));
+            let stroke = ui.style().visuals.widgets.active.bg_stroke;
 
             let shapes = vec![Shape::line(
                 pts.iter()

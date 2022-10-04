@@ -27,6 +27,7 @@ fn main() {
         "waveview",
         native_options,
         Box::new(move |_cc| {
+            // cc.egui_ctx.set_visuals(eframe::egui::Visuals::light());
             // let path = opt.starting_file.().unwrap_or();
             let mut file = if let Some(path) = &opt.starting_file {
                 std::fs::File::open(path).unwrap()

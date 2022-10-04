@@ -268,6 +268,8 @@ impl eframe::App for TemplateApp {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             // The top panel is often a good place for a menu bar:
             egui::menu::bar(ui, |ui| {
+                egui::widgets::global_dark_light_mode_switch(ui);
+                ui.separator();
                 ui.menu_button("File", |ui| {
                     if ui.button("Open File…").clicked() {
                         *a_future = Some(Box::pin(async {
@@ -526,6 +528,8 @@ x_scale: {x_scale:?}",
                     })
                     .inner;
 
+                let yellow = egui::Color32::from_rgb(0xd2, 0x99, 0x1d);
+
                 let mut hover_t = None;
                 if let Some(pos) = &hover_pos {
                     use egui::*;
@@ -540,7 +544,7 @@ x_scale: {x_scale:?}",
                     let rounded_x = rect.min.x + t_rounded * *x_scale * 32.0;
                     let p0 = pos2(rounded_x, max_rect.min.y + 0.0);
                     let p1 = pos2(rounded_x, max_rect.max.y);
-                    let stroke = Stroke::new(1.0, Color32::YELLOW);
+                    let stroke = Stroke::new(2.0, yellow);
                     shapes.push(Shape::line_segment([p0, p1], stroke));
                     ui.painter().extend(shapes);
                 }
@@ -549,7 +553,7 @@ x_scale: {x_scale:?}",
                 let x_min = (main_viewport.min.x / 32.0 / *x_scale).floor() as usize;
                 let x_max = (main_viewport.max.x / 32.0 / *x_scale).ceil() as usize;
                 let mut ticks = vec![];
-                let stroke = egui::Stroke::new(1.0, egui::Color32::YELLOW);
+                let stroke = egui::Stroke::new(2.0, yellow);
                 let num_ticks = std::cmp::max(1, (main_viewport.width() / 64.0).floor() as usize);
                 let gap = std::cmp::max(
                     1,
@@ -582,10 +586,7 @@ x_scale: {x_scale:?}",
                     let anchor = Align2::LEFT_CENTER;
                     let font_size = if highlight { 13.0 } else { 12.0 };
                     let font = epaint::text::FontId::new(font_size, text::FontFamily::Monospace);
-                    let mut color = Color32::from_additive_luminance(196);
-                    if highlight {
-                        color = Color32::from_additive_luminance(255);
-                    }
+                    let color = ui.style().visuals.text_color();
 
                     let galley = ui.fonts().layout_no_wrap(used_i.to_string(), font, color);
                     let rect =
