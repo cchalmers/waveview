@@ -99,7 +99,6 @@ impl<'a> Wave<'a> {
 
         let mut wave_ui = ui.child_ui(rect, Layout::default());
         wave_ui.set_clip_rect(rect);
-        let mut pts = vec![];
         // let mut last_high;
         // let dx = 1.0;
         // let dy = 0.9;
@@ -114,6 +113,7 @@ impl<'a> Wave<'a> {
         // - the last signal at the end of the simulation should be visible (currently it gets cut
         //   off)
         if wave_data.width() == 1 {
+            let mut pts = vec![];
             let mut scalars = wave_data.bit_range(first_ix..last_ix).into_iter();
             let (t0, v0) = scalars.next().unwrap();
             let mut x = t0 as f32;
@@ -200,19 +200,28 @@ impl<'a> Wave<'a> {
             )];
             ui.painter().extend(shapes);
         } else {
+            let x_taper = 0.1;
+            let mut pts_a = vec![];
+            let mut pts_b = vec![];
+
             let mut values = wave_data.range(first_ix..last_ix).into_iter();
             let (t0, _v0) = values.next().unwrap();
             let mut x = t0 as f32;
             // let mut y;
-            pts.push(PlotPoint::new(x, 0.9));
-            pts.push(PlotPoint::new(x, 0.1));
-            pts.push(PlotPoint::new(x, 0.9));
+            pts_a.push(PlotPoint::new(x, 0.5));
+            // pts_a.push(PlotPoint::new(x + 0.1, 0.1));
+            pts_b.push(PlotPoint::new(x, 0.5));
+            // pts_b.push(PlotPoint::new(x + 0.1, 0.9));
+            // let mut polarity = true;
 
             for (t, _) in values {
+                pts_a.push(PlotPoint::new(x + x_taper, 0.1));
+                pts_b.push(PlotPoint::new(x + x_taper, 0.9));
                 x = t as f32;
-                pts.push(PlotPoint::new(x, 0.9));
-                pts.push(PlotPoint::new(x, 0.1));
-                pts.push(PlotPoint::new(x, 0.9));
+                pts_a.push(PlotPoint::new(x - x_taper, 0.1));
+                pts_a.push(PlotPoint::new(x, 0.5));
+                pts_b.push(PlotPoint::new(x - x_taper, 0.9));
+                pts_b.push(PlotPoint::new(x, 0.5));
             }
             fn pos_from_val(value: PlotPoint, rect: Rect, len: usize) -> egui::Pos2 {
                 let x = remap(
@@ -230,14 +239,20 @@ impl<'a> Wave<'a> {
                 pos2(x as f32, y as f32)
             }
 
-            let stroke = Stroke::new(2.0, Color32::from_additive_luminance(196));
+            let stroke = ui.style().visuals.widgets.active.bg_stroke;
 
             let mut shapes = vec![Shape::line(
-                pts.iter()
+                pts_a.iter()
                     .map(|v| pos_from_val(*v, rect, wave_data.final_time() as usize))
                     .collect(),
                 stroke,
-            )];
+            ),
+            Shape::line(
+                            pts_b.iter()
+                                .map(|v| pos_from_val(*v, rect, wave_data.final_time() as usize))
+                                .collect(),
+                            stroke,
+                        )];
             if scale > 0.05 {
                 let mut prev = &wave_data[first_ix];
                 // eprintln!("first_ix = {first_ix}, prev = {prev:?}");
@@ -255,22 +270,19 @@ impl<'a> Wave<'a> {
                     // let font = epaint::text::FontId::new(12.0, text::FontFamily::Monospace);
                     // let sty = TextStyle::Monospace;
                     let font = epaint::text::FontId::new(12.0, text::FontFamily::Monospace);
-                    let color = Color32::from_additive_luminance(196);
-                    // let fill_color = Color32::from_additive_luminance(40);
-                    // let fill_color = if h { Color32::GREEN.linear_multiply(0.1) } else { Color32::RED.linear_multiply(0.1) };
-                    let fill_color = if true {
-                        Color32::from(Rgba::GREEN.multiply(0.2) + Rgba::from_white_alpha(0.08))
-                    } else {
-                        // Color32::RED.linear_multiply(0.1)
-                        // Color32::from(Rgba::RED.multiply(0.2) + Rgba::from_white_alpha(0.08))
-                        Color32::from(Rgba::RED.multiply(0.3))
-                    };
+                    let color = ui.style().visuals.text_color();
+                    // let fill_color = if true {
+                    //     egui::Color32::from_rgb(96, 119, 74)
+                    //     // Color32::from(Rgba::GREEN.multiply(0.2) + Rgba::from_white_alpha(0.08))
+                    // } else {
+                    //     Color32::from(Rgba::RED.multiply(0.3))
+                    // };
 
                     let galley = ui.fonts().layout_no_wrap(txt, font, color);
                     let rect = anchor.anchor_rect(Rect::from_min_size(pos, galley.size()));
                     let fill_rect = rect.expand(2.0);
                     if fill_rect.width() < (x - prev_start_x) * scale * 32.0 {
-                        shapes.push(Shape::rect_filled(fill_rect, 2.0, fill_color));
+                        // shapes.push(Shape::rect_filled(fill_rect, 2.0, fill_color));
                         shapes.push(Shape::galley(rect.min, galley));
                     }
                     prev = vs;
