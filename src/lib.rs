@@ -2,7 +2,7 @@
 #![cfg_attr(not(debug_assertions), deny(warnings))] // Forbid warnings in release builds
 #![warn(clippy::all, rust_2018_idioms)]
 
-mod app;
+pub mod app;
 pub mod vcd;
 mod wave;
 pub use app::TemplateApp;

@@ -2342,6 +2342,7 @@ dependencies = [
  "tracing-subscriber",
  "tracing-wasm",
  "vcd",
+ "web-sys",
 ]
 
 [[package]]

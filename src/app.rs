@@ -22,8 +22,9 @@ pub struct TemplateApp {
     // a_future: Option<std::pin::Pin<Box<dyn Future<Output = Option<rfd::FileHandle>>>>>,
     a_future: Option<std::pin::Pin<Box<dyn Future<Output = Option<OpenedVcd>>>>>,
     open_file_ctx: Option<OpenFileCtx>,
-    download: Arc<Mutex<Download>>,
+    pub download: Arc<Mutex<Download>>,
     url_window: UrlWindow,
+    err_window: ErrWindow,
 }
 
 impl TemplateApp {
@@ -61,11 +62,12 @@ impl TemplateApp {
                 url: "https://raw.githubusercontent.com/Mohammad-Heydariii/Digital-Systems-Lab-Course/main/Lab_project4/modelsim_files/clkdiv2n_tb.vcd".to_owned(),
                 open: false,
             },
+            err_window: ErrWindow { msg: String::new(), open: false },
         }
     }
 }
 
-enum Download {
+pub enum Download {
     None,
     InProgress,
     Done(ehttp::Result<ehttp::Response>),
@@ -125,6 +127,28 @@ unsafe fn my_drop(_: *const ()) {}
 
 fn new_waker(ctx: &OpenFileCtx) -> std::task::RawWaker {
     std::task::RawWaker::new(ctx as *const OpenFileCtx as *const (), &RAW_WAKER_VTABLE)
+}
+
+struct ErrWindow {
+    msg: String,
+    open: bool,
+}
+
+impl ErrWindow {
+    fn show(&mut self, ctx: &egui::Context) {
+        let window = egui::Window::new("URL parse failed")
+            .id(egui::Id::new("url failed"))
+            .resizable(false)
+            .collapsible(false)
+            .title_bar(true)
+            .open(&mut self.open)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]);
+        window.show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(&self.msg);
+            });
+        });
+    }
 }
 
 struct UrlWindow {
@@ -207,6 +231,7 @@ impl eframe::App for TemplateApp {
             open_file_ctx,
             download,
             url_window,
+            err_window,
         } = self;
 
         {
@@ -214,8 +239,10 @@ impl eframe::App for TemplateApp {
             match &*dl {
                 Download::None => (),
                 Download::InProgress => eprintln!("in progress"),
-                Download::Done(Err(res)) => {
-                    tracing::event!(tracing::Level::ERROR, "error: {res}");
+                Download::Done(Err(err)) => {
+                    tracing::event!(tracing::Level::ERROR, "error: {err}");
+                    err_window.msg = format!("url download failed:\n{err}");
+                    err_window.open = true;
                     *dl = Download::None;
                 }
                 Download::Done(Ok(res)) => {
@@ -228,10 +255,25 @@ impl eframe::App for TemplateApp {
                     );
                     let bytes = &res.bytes;
                     let mut cursor = std::io::Cursor::new(bytes);
-                    let (signals, time) = vcd::read_clocked_vcd(&mut cursor).unwrap();
-                    *wave_data = mk_wave_data(signals);
-                    *final_time = time;
-                    *x_scale = None;
+
+                    if res.status == 200 {
+                        match vcd::read_clocked_vcd(&mut cursor) {
+                            Ok((signals, time)) => {
+                                *wave_data = mk_wave_data(signals);
+                                *final_time = time;
+                                *x_scale = None;
+                            }
+                            Err(err) => {
+                                err_window.msg =
+                                    format!("url {} failed to parse as vcd:\n{err}", res.url);
+                                err_window.open = true;
+                            }
+                        }
+                    } else {
+                        err_window.msg =
+                            format!("url {} fetch gave status:\n{}", res.url, res.status);
+                        err_window.open = true;
+                    }
                     *dl = Download::None;
                 }
             }
@@ -311,6 +353,7 @@ impl eframe::App for TemplateApp {
         });
 
         url_window.show(ctx, download);
+        err_window.show(ctx);
 
         // let main_viewport = std::rc::Rc::new(std::cell::Cell::new(None));
         // let mut main_viewport = None;

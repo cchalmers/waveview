@@ -57,7 +57,22 @@ fn main() {
     eframe::start_web(
         "the_canvas_id", // hardcode it
         web_options,
-        Box::new(|_cc| Box::new(waveview::TemplateApp::new(signals, 1))),
+        Box::new(|cc| {
+            let app = waveview::TemplateApp::new(signals, 1);
+            if let Some(Ok(s)) = web_sys::window().map(|w| w.location().search()) {
+                if let Some(url) = s.strip_prefix('?') {
+                    let request = ehttp::Request::get(url);
+                    let dl = app.download.clone();
+                    *dl.lock().unwrap() = waveview::app::Download::InProgress;
+                    let ctx = cc.egui_ctx.clone();
+                    ehttp::fetch(request, move |response| {
+                        *dl.lock().unwrap() = waveview::app::Download::Done(response);
+                        ctx.request_repaint();
+                    });
+                }
+            }
+            Box::new(app)
+        }),
     )
     .expect("failed to start eframe");
 }
