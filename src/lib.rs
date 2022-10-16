@@ -6,3 +6,6 @@ pub mod app;
 pub mod vcd;
 mod wave;
 pub use app::TemplateApp;
+
+#[cfg(target_arch = "wasm32")]
+mod ws_wasm;
