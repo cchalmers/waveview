@@ -9,3 +9,5 @@ pub use app::TemplateApp;
 
 #[cfg(target_arch = "wasm32")]
 mod ws_wasm;
+#[cfg(target_arch = "wasm32")]
+mod wasm_file_pick;

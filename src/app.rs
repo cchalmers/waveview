@@ -3,6 +3,9 @@ use crate::wave;
 use eframe::egui;
 use eframe::egui::NumExt;
 
+#[cfg(target_arch = "wasm32")]
+use crate::wasm_file_pick;
+
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
@@ -20,7 +23,11 @@ pub struct TemplateApp {
     dropped_files: Vec<egui::DroppedFile>,
     main_viewport: egui::Rect,
     // a_future: Option<std::pin::Pin<Box<dyn Future<Output = Option<rfd::FileHandle>>>>>,
-    a_future: Option<std::pin::Pin<Box<dyn Future<Output = Option<OpenedVcd>>>>>,
+    // a_future: Option<std::pin::Pin<Box<dyn Future<Output = Option<OpenedVcd>>>>>,
+
+    #[cfg(target_arch = "wasm32")]
+    file_picker: wasm_file_pick::OpenFileElement,
+
     open_file_ctx: Option<OpenFileCtx>,
     pub download: Arc<Mutex<Download>>,
     url_window: UrlWindow,
@@ -43,6 +50,16 @@ impl TemplateApp {
                 (name, sig)
             })
             .collect();
+        #[cfg(target_arch = "wasm32")]
+        let mut file_picker = wasm_file_pick::OpenFileElement::new();
+        #[cfg(target_arch = "wasm32")]
+        file_picker.on_change(|files: web_sys::FileList| {
+            tracing::event!(tracing::Level::INFO, "there are {} files", files.length());
+            if files.length() > 0 {
+                let file = files.get(0).unwrap();
+                tracing::event!(tracing::Level::INFO, "you picked {}", file.name());
+            }
+        });
         Self {
             wave_data,
             final_time,
@@ -55,7 +72,9 @@ impl TemplateApp {
                 egui::pos2(0.0, 0.0),
                 egui::vec2(100.0, 800.0),
             ),
-            a_future: None,
+            // a_future: None,
+            #[cfg(target_arch = "wasm32")]
+            file_picker,
             open_file_ctx: None,
             download: Arc::new(Mutex::new(Download::None)),
             url_window: UrlWindow {
@@ -227,7 +246,9 @@ impl eframe::App for TemplateApp {
             drag_time_start,
             dropped_files: _,
             main_viewport,
-            a_future,
+            // a_future,
+            #[cfg(target_arch = "wasm32")]
+            file_picker,
             open_file_ctx,
             download,
             url_window,
@@ -279,32 +300,32 @@ impl eframe::App for TemplateApp {
             }
         }
 
-        if let Some(future) = a_future {
-            if open_file_ctx.is_none() {
-                let awoken = Arc::new(AtomicBool::new(false));
-                *open_file_ctx = Some(OpenFileCtx {
-                    awoken,
-                    egui_ctx: ctx.clone(),
-                });
-            }
-            let waker =
-                unsafe { std::task::Waker::from_raw(new_waker(open_file_ctx.as_ref().unwrap())) };
-            let mut my_ctx = std::task::Context::from_waker(&waker);
-            match Future::poll(future.as_mut(), &mut my_ctx) {
-                Poll::Pending => (),
-                Poll::Ready(shandle) => {
-                    match shandle {
-                        Some(handle) => {
-                            *wave_data = handle.wave_data;
-                            *final_time = handle.time;
-                        }
-                        None => (),
-                    }
-                    *a_future = None;
-                    *open_file_ctx = None;
-                }
-            }
-        }
+        // if let Some(future) = a_future {
+        //     if open_file_ctx.is_none() {
+        //         let awoken = Arc::new(AtomicBool::new(false));
+        //         *open_file_ctx = Some(OpenFileCtx {
+        //             awoken,
+        //             egui_ctx: ctx.clone(),
+        //         });
+        //     }
+        //     let waker =
+        //         unsafe { std::task::Waker::from_raw(new_waker(open_file_ctx.as_ref().unwrap())) };
+        //     let mut my_ctx = std::task::Context::from_waker(&waker);
+        //     match Future::poll(future.as_mut(), &mut my_ctx) {
+        //         Poll::Pending => (),
+        //         Poll::Ready(shandle) => {
+        //             match shandle {
+        //                 Some(handle) => {
+        //                     *wave_data = handle.wave_data;
+        //                     *final_time = handle.time;
+        //                 }
+        //                 None => (),
+        //             }
+        //             *a_future = None;
+        //             *open_file_ctx = None;
+        //         }
+        //     }
+        // }
 
         // Examples of how to create different panels and windows.
         // Pick whichever suits you.
@@ -318,22 +339,26 @@ impl eframe::App for TemplateApp {
                 ui.separator();
                 ui.menu_button("File", |ui| {
                     if ui.button("Open File…").clicked() {
-                        *a_future = Some(Box::pin(async {
-                            let handle = rfd::AsyncFileDialog::new().pick_file().await;
-                            if let Some(h) = &handle {
-                                let bytes = h.read().await;
-                                let mut cursor = std::io::Cursor::new(&bytes);
-                                let (signals, time) = vcd::read_clocked_vcd(&mut cursor).unwrap();
-                                let wave_data = mk_wave_data(signals);
-                                Some(OpenedVcd {
-                                    // filename: h.file_name(),
-                                    wave_data,
-                                    time,
-                                })
-                            } else {
-                                None
-                            }
-                        }));
+                        tracing::event!(tracing::Level::INFO, "clicked");
+                        #[cfg(target_arch = "wasm32")]
+                        file_picker.select_file();
+
+                        // *a_future = Some(Box::pin(async {
+                        //     let handle = rfd::AsyncFileDialog::new().pick_file().await;
+                        //     if let Some(h) = &handle {
+                        //         let bytes = h.read().await;
+                        //         let mut cursor = std::io::Cursor::new(&bytes);
+                        //         let (signals, time) = vcd::read_clocked_vcd(&mut cursor).unwrap();
+                        //         let wave_data = mk_wave_data(signals);
+                        //         Some(OpenedVcd {
+                        //             // filename: h.file_name(),
+                        //             wave_data,
+                        //             time,
+                        //         })
+                        //     } else {
+                        //         None
+                        //     }
+                        // }));
                         ui.close_menu();
                         ctx.request_repaint();
                     }

@@ -62,4 +62,9 @@ features = [
   "MessageEvent",
   "ProgressEvent",
   "WebSocket",
+  'Document',
+  'Element',
+  'HtmlElement',
+  'Node',
+  'Window',
 ]
