@@ -504,7 +504,7 @@ impl eframe::App for TemplateApp {
                         let resp = ui.interact(
                             egui::Rect::EVERYTHING,
                             egui::Id::new("ui_hover"),
-                            egui::Sense::drag(),
+                            egui::Sense::hover(),
                         );
                         let hover_pos = resp.hover_pos();
 
