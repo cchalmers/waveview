@@ -664,13 +664,13 @@ x_scale: {x_scale:?}",
                     ticks.push(egui::Shape::line_segment([p0, p1], stroke));
 
                     use egui::*;
-                    let font_size = if highlight { 13.0 } else { 12.0 };
+                    let font_size = if highlight { 13.0 } else { 11.0 };
                     let font = epaint::text::FontId::new(font_size, text::FontFamily::Monospace);
                     let color = ui.style().visuals.text_color();
 
                     if let Some(diff) = diff {
                         let str = format!("{}{diff}", if diff < 0 { "" } else { "+" });
-                        let font = epaint::text::FontId::new(11.0, text::FontFamily::Monospace);
+                        let font = epaint::text::FontId::new(10.0, text::FontFamily::Monospace);
                         let galley = ui.fonts().layout_no_wrap(str, font, color);
                         // let rect =
                         //     Align2::RIGHT_CENTER.anchor_rect(Rect::from_min_size(p0 - galley.size() - vec2(4.0, 0.0), galley.size()));
