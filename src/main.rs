@@ -30,7 +30,8 @@ fn main() {
             let (signals, time) = waveview::vcd::read_clocked_vcd(&mut file).unwrap();
             Box::new(waveview::TemplateApp::new(signals, time))
         }),
-    );
+    )
+    .unwrap();
 }
 
 #[cfg(target_arch = "wasm32")]

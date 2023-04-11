@@ -76,7 +76,7 @@ impl<'a> Wave<'a> {
         let total_wave_width = scale * wave_data.final_time() as f32;
         let (rect, response) = ui.allocate_exact_size(
             vec2(total_wave_width * unscaled_unit_width, height),
-            Sense::drag(),
+            Sense::hover(),
         );
         let _response = response.on_hover_ui_at_pointer(|ui| {
             ui.add(egui::widgets::Label::new(name));
@@ -282,7 +282,7 @@ impl<'a> Wave<'a> {
                     //     Color32::from(Rgba::RED.multiply(0.3))
                     // };
 
-                    let galley = ui.fonts().layout_no_wrap(txt, font, color);
+                    let galley = ui.fonts(|f| f.layout_no_wrap(txt, font, color));
                     let rect = anchor.anchor_rect(Rect::from_min_size(pos, galley.size()));
                     let fill_rect = rect.expand(2.0);
                     if fill_rect.width() < (x - prev_start_x) * scale * 32.0 {

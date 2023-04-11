@@ -504,7 +504,8 @@ impl eframe::App for TemplateApp {
                         let resp = ui.interact(
                             egui::Rect::EVERYTHING,
                             egui::Id::new("ui_hover"),
-                            egui::Sense::hover(),
+                            // if I change this to hover, I can click and drag to move waves around
+                            egui::Sense::click_and_drag(),
                         );
                         let hover_pos = resp.hover_pos();
 
@@ -545,7 +546,7 @@ x_scale: {x_scale:?}",
                         // do the actual zoom on the next frame where we know the scroll position that
                         // will be needed
                         if ui.rect_contains_pointer(egui::Rect::EVERYTHING) {
-                            let zoom = ui.input().zoom_delta();
+                            let zoom = ui.input(|i| i.zoom_delta());
                             if zoom != 1.0 {
                                 *x_scale *= zoom;
                                 if *x_scale < 0.001 {
@@ -671,12 +672,12 @@ x_scale: {x_scale:?}",
                     if let Some(diff) = diff {
                         let str = format!("{}{diff}", if diff < 0 { "" } else { "+" });
                         let font = epaint::text::FontId::new(10.0, text::FontFamily::Monospace);
-                        let galley = ui.fonts().layout_no_wrap(str, font, color);
+                        let galley = ui.fonts(|f| f.layout_no_wrap(str, font, color));
                         // let rect =
                         //     Align2::RIGHT_CENTER.anchor_rect(Rect::from_min_size(p0 - galley.size() - vec2(4.0, 0.0), galley.size()));
                         ticks.push(Shape::galley(p0 - vec2(4.0 + galley.size().x, 0.0), galley));
                     }
-                    let galley = ui.fonts().layout_no_wrap(used_i.to_string(), font, color);
+                    let galley = ui.fonts(|f| f.layout_no_wrap(used_i.to_string(), font, color));
                     let rect = Align2::LEFT_CENTER
                         .anchor_rect(Rect::from_min_size(p0 + vec2(4.0, 0.0), galley.size()));
                     ticks.push(Shape::galley(rect.min + vec2(4.0, 0.0), galley));
@@ -720,22 +721,24 @@ impl TemplateApp {
         use egui::*;
 
         // Preview hovering files:
-        if !ctx.input().raw.hovered_files.is_empty() {
+        if !ctx.input(|i| i.raw.hovered_files.is_empty()) {
             let mut text = "Dropping files:\n".to_owned();
-            for file in &ctx.input().raw.hovered_files {
-                if let Some(path) = &file.path {
-                    text += &format!("\n{}", path.display());
-                } else if !file.mime.is_empty() {
-                    text += &format!("\n{}", file.mime);
-                } else {
-                    text += "\n???";
+            ctx.input(|i| {
+                for file in &i.raw.hovered_files {
+                    if let Some(path) = &file.path {
+                        text += &format!("\n{}", path.display());
+                    } else if !file.mime.is_empty() {
+                        text += &format!("\n{}", file.mime);
+                    } else {
+                        text += "\n???";
+                    }
                 }
-            }
+            });
 
             let painter =
                 ctx.layer_painter(LayerId::new(Order::Foreground, Id::new("file_drop_target")));
 
-            let screen_rect = ctx.input().screen_rect();
+            let screen_rect = ctx.input(|i| i.screen_rect());
             painter.rect_filled(screen_rect, 0.0, Color32::from_black_alpha(192));
             painter.text(
                 screen_rect.center(),
@@ -747,8 +750,8 @@ impl TemplateApp {
         }
 
         // Collect dropped files:
-        if !ctx.input().raw.dropped_files.is_empty() {
-            self.dropped_files = ctx.input().raw.dropped_files.clone();
+        if !ctx.input(|i| i.raw.dropped_files.is_empty()) {
+            self.dropped_files = ctx.input(|i| i.raw.dropped_files.clone());
         }
 
         // Show dropped files (if any):
