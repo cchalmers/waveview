@@ -4,7 +4,8 @@
     # nixpkgs.url = "github:NixOS/nixpkgs/master";
     flake-utils.url = "github:numtide/flake-utils";
 
-    cargo2nix.url = "github:cargo2nix/cargo2nix/release-0.11.0";
+    cargo2nix.url = "github:acristoffers/cargo2nix/patch-1";
+    # https://github.com/acristoffers/cargo2nix/tree/patch-1
     # cargo2nix.url = "github:torhovland/cargo2nix/wasm";
     cargo2nix.inputs.nixpkgs.follows = "nixpkgs";
     cargo2nix.inputs.flake-utils.follows = "flake-utils";
@@ -18,7 +19,7 @@
     rust-overlay.inputs.flake-utils.follows = "flake-utils";
   };
 
-  outputs = { self, nixpkgs, gitignore ,cargo2nix, rust-overlay, flake-utils }:
+  outputs = { self, nixpkgs, gitignore, cargo2nix, rust-overlay, flake-utils }:
    flake-utils.lib.eachDefaultSystem (system:
     let pkgs = import nixpkgs {
           inherit system;
@@ -43,7 +44,7 @@
 
         waveview = let
           rustPkgs = rustBuilder.makePackageSet {
-            rustVersion = "1.63.0";
+            rustVersion = "1.72.0";
             packageFun = import ./Cargo.nix;
             packageOverrides = pkgs: pkgs.rustBuilder.overrides.all ++ [
 
@@ -60,7 +61,7 @@
         in (rustPkgs.workspace.waveview {}).bin;
 
         waveview-wasm = let
-          rustVersion = "1.63.0";
+          rustVersion = "1.72.0";
           pkgsWasm = import nixpkgs {
             inherit system;
             crossSystem = {
