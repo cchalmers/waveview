@@ -16,10 +16,10 @@ path = "src/main.rs"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-eframe = "0.21.3" # Gives us egui, epi and web+native backends
+eframe = "0.22.0" # Gives us egui, epi and web+native backends
 ehttp = "*"
 color-eyre = "*"
-vcd = "*"
+vcd = "0.7"
 itertools = "*"
 indexmap = "*"
 log = "*"

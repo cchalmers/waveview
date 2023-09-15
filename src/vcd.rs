@@ -257,10 +257,12 @@ fn header_vars(items: &[vcd::ScopeItem]) -> Vec<ScopedVar> {
                 let mut stack = stack.to_vec();
                 stack.push((scope.scope_type, scope.identifier.clone()));
                 scope
-                    .children
+                    .items
                     .iter()
                     .for_each(|item| add_scopes(vars, &stack, item));
             }
+            vcd::ScopeItem::Comment(_) => {}
+            _ => (),
         }
     }
 
@@ -275,7 +277,7 @@ fn header_vars(items: &[vcd::ScopeItem]) -> Vec<ScopedVar> {
     vars
 }
 
-pub fn read_clocked_vcd(r: &mut impl io::Read) -> std::io::Result<(Vec<(ScopedVar, Signal)>, u64)> {
+pub fn read_clocked_vcd(r: &mut impl io::BufRead) -> std::io::Result<(Vec<(ScopedVar, Signal)>, u64)> {
     let mut parser = vcd::Parser::new(r);
 
     // The VCD spec is weird and confusing. There's a couple of features I'm not bothering to
@@ -319,7 +321,7 @@ pub fn read_clocked_vcd(r: &mut impl io::Read) -> std::io::Result<(Vec<(ScopedVa
             ChangeVector(i, v) => {
                 // panic!("can't change vector yet");
                 if let Some(signal) = signal_map.get_mut(&i) {
-                    signal.insert(time, v);
+                    signal.insert(time, v.into());
                 } else {
                     eprintln!("id {i:?} not found");
                 }

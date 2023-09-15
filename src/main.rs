@@ -27,7 +27,8 @@ fn main() {
             } else {
                 std::fs::File::open("/Users/chris/Dev/egui/waveview/mlp512b4c1.vcd").unwrap()
             };
-            let (signals, time) = waveview::vcd::read_clocked_vcd(&mut file).unwrap();
+            let mut buf_file = std::io::BufReader::new(&mut file);
+            let (signals, time) = waveview::vcd::read_clocked_vcd(&mut buf_file).unwrap();
             Box::new(waveview::TemplateApp::new(signals, time))
         }),
     )

@@ -758,7 +758,8 @@ impl TemplateApp {
         if !self.dropped_files.is_empty() {
             if let Some(path) = &self.dropped_files[0].path {
                 let mut file = std::fs::File::open(path).unwrap();
-                let (sigs, time) = vcd::read_clocked_vcd(&mut file).unwrap();
+                let mut buf_file = std::io::BufReader::new(&mut file);
+                let (sigs, time) = vcd::read_clocked_vcd(&mut buf_file).unwrap();
                 self.final_time = time;
                 self.wave_data = mk_wave_data(sigs);
             } else if let Some(bytes) = &self.dropped_files[0].bytes {
