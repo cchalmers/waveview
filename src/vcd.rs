@@ -277,7 +277,9 @@ fn header_vars(items: &[vcd::ScopeItem]) -> Vec<ScopedVar> {
     vars
 }
 
-pub fn read_clocked_vcd(r: &mut impl io::BufRead) -> std::io::Result<(Vec<(ScopedVar, Signal)>, u64)> {
+pub fn read_clocked_vcd(
+    r: &mut impl io::BufRead,
+) -> std::io::Result<(Vec<(ScopedVar, Signal)>, u64)> {
     let mut parser = vcd::Parser::new(r);
 
     // The VCD spec is weird and confusing. There's a couple of features I'm not bothering to
