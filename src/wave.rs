@@ -1,6 +1,6 @@
 use eframe::egui;
-use egui_plot::PlotPoint;
 use egui::*;
+use egui_plot::PlotPoint;
 use std::ops::RangeInclusive;
 // use std::ops::RangeInclusive;
 use crate::vcd;

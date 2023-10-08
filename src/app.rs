@@ -29,7 +29,10 @@ pub struct TemplateApp {
 
     row_height: f32,
 
+    show_info: bool,
     info: Info,
+
+    search_text: String,
 }
 
 struct Info {
@@ -125,7 +128,11 @@ impl TemplateApp {
             err_window: ErrWindow { msg: String::new(), open: false },
 
             row_height: 32.0,
+
+            show_info: cfg!(debug_assertions),
             info: Info { rect: Rect::NOTHING, min_rect: Rect::NOTHING, max_rect: Rect::NOTHING, viewport: Rect::NOTHING, x_scale: 0.0 },
+
+            search_text: String::new(),
         }
     }
 }
@@ -277,7 +284,9 @@ impl eframe::App for TemplateApp {
             url_window,
             err_window,
             row_height,
+            show_info,
             info,
+            search_text,
         } = self;
 
         {
@@ -392,32 +401,29 @@ impl eframe::App for TemplateApp {
                     #[cfg(target_arch = "wasm32")]
                     let _ = &frame;
                 });
+                ui.menu_button("View", |ui| {
+                    ui.add(egui::Slider::new(row_height, 25.0..=128.0).text("height"));
+                    if *show_info {
+                        if ui.button("Hide info").clicked() {
+                            *show_info = false;
+                            ui.close_menu();
+                        }
+                    } else if ui.button("Show info").clicked() {
+                        *show_info = true;
+                        ui.close_menu();
+                    }
+
+                    // ui.button("
+                });
             });
         });
 
-        egui::SidePanel::right("inspection_panel").show(ctx, |ui| {
-            let scroll_area = egui::ScrollArea::both().auto_shrink([false; 2]);
-            scroll_area.show(ui, |ui| info.show(ctx, ui));
-            // scroll_area.show(ui, |ui| ctx.inspection_ui(ui));
-            // ui.horizontal(|ui| {
-            //     ui.label("url:");
-            //     ui.text_edit_singleline(&mut self.url);
-            // });
-            // ui.horizontal(|ui| {
-            //     if ui.button("fetch").clicked() {
-            //         let request = ehttp::Request::get(&self.url);
-            //         let dl = download.clone();
-            //         *dl.lock().unwrap() = Download::InProgress;
-            //         let ctx2 = ctx.clone();
-            //         ehttp::fetch(request, move |response| {
-            //             *dl.lock().unwrap() = Download::Done(response);
-            //             ctx2.request_repaint();
-            //         });
-            //         ctx.request_repaint();
-            //         self.open = false;
-            //     }
-            // });
-        });
+        if *show_info {
+            egui::SidePanel::right("inspection_panel").show(ctx, |ui| {
+                let scroll_area = egui::ScrollArea::both().auto_shrink([false; 2]);
+                scroll_area.show(ui, |ui| info.show(ctx, ui));
+            });
+        }
 
         // let main_viewport = std::rc::Rc::new(std::cell::Cell::new(None));
         // let mut main_viewport = None;
@@ -430,7 +436,7 @@ impl eframe::App for TemplateApp {
 
             ui.horizontal(|ui| {
                 // TODO adjust scroll offset so you don't move when changing height
-                ui.add(egui::Slider::new(row_height, 25.0..=100.0).text("height"));
+                let _resp = ui.text_edit_singleline(search_text);
             });
             // ui.separator();
 
@@ -475,7 +481,13 @@ impl eframe::App for TemplateApp {
                 // 32 looks better with default layout but 25 looks better with top_down/centered
                 // ui.horizontal(|ui| ui.set_height(32.0 + row_height_with_spacing * min_row as f32));
                 ui.horizontal(|ui| ui.set_height(25.0 + row_height_with_spacing * min_row as f32));
-                for (i, d) in wave_data.iter().enumerate().take(max_row).skip(min_row) {
+                for (i, d) in wave_data
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, d)| d.0.contains(&*search_text))
+                    .take(max_row)
+                    .skip(min_row)
+                {
                     iter.next(ui, d.id(), i, true, |ui, item_handle| {
                         item_handle.ui(ui, |ui, handle, state| {
                             dragging |= state.dragged;
@@ -511,7 +523,12 @@ impl eframe::App for TemplateApp {
                 scroll_area
             };
 
-            let num_rows = wave_data.len();
+            let filtered = wave_data
+                .iter()
+                .filter(|(name, _)| name.contains(&*search_text))
+                .collect::<Vec<_>>();
+
+            let num_rows = filtered.len();
 
             // let row_height_sans_spacing = 32.0;
             let spacing = ui.spacing().item_spacing;
@@ -576,7 +593,7 @@ impl eframe::App for TemplateApp {
                         //         / *x_scale
                         // });
                         ui.vertical(|ui| {
-                            for d in wave_data.iter().take(max_row).skip(min_row) {
+                            for d in filtered.iter().take(max_row).skip(min_row) {
                                 let mut wave = wave::Wave::new(
                                     &d.0,
                                     *x_scale,
