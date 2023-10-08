@@ -2,6 +2,7 @@ use crate::vcd;
 use crate::wave;
 use eframe::egui;
 use eframe::egui::NumExt;
+use egui::*;
 
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
@@ -28,7 +29,62 @@ pub struct TemplateApp {
 
     row_height: f32,
 
-    msg: String,
+    info: Info,
+}
+
+struct Info {
+    rect: Rect,
+    min_rect: Rect,
+    max_rect: Rect,
+    viewport: Rect,
+    x_scale: f32,
+}
+
+impl Info {
+    fn show(&mut self, ctx: &egui::Context, ui: &mut Ui) {
+        let Self {
+            rect,
+            min_rect,
+            max_rect,
+            viewport,
+            x_scale,
+        } = self;
+        ui.label(RichText::new("rect").strong());
+        ui.monospace(format!("{:+04?}", rect.min));
+        ui.monospace(format!("{:+04?}", rect.max));
+        ui.separator();
+        ui.label(RichText::new("min_rect").strong());
+        ui.monospace(format!("{:?}", min_rect.min));
+        ui.monospace(format!("{:?}", min_rect.max));
+        ui.separator();
+        ui.label(RichText::new("max_rect").strong());
+        ui.monospace(format!("{:?}", max_rect.min));
+        ui.monospace(format!("{:?}", max_rect.max));
+        ui.separator();
+        ui.label(RichText::new("viewport").strong());
+        ui.monospace(format!("{:?}", viewport.min));
+        ui.monospace(format!("{:?}", viewport.max));
+        ui.separator();
+        ui.label(RichText::new("x_scale").strong());
+        ui.monospace(format!("{:?}", x_scale));
+        ui.separator();
+        ui.monospace(RichText::new("mouse_pos").strong());
+        if let Some(mouse_pos) = ctx.input(|i| i.pointer.hover_pos()) {
+            ui.label(format!("{:?}", mouse_pos));
+        } else {
+            ui.label("None");
+        }
+        ui.separator();
+        ui.label(RichText::new("scroll_delta").strong());
+        let scroll_delta = ctx.input(|i| i.scroll_delta);
+        let scroll_x = scroll_delta.x;
+        let scroll_y = scroll_delta.y;
+        ui.monospace(format!("{scroll_x:+03} {scroll_y:+03}"));
+        ui.separator();
+        ui.label(RichText::new("screen_rect").strong());
+        ui.label(format!("{:?}", ctx.screen_rect()));
+        ui.separator();
+    }
 }
 
 impl TemplateApp {
@@ -69,7 +125,7 @@ impl TemplateApp {
             err_window: ErrWindow { msg: String::new(), open: false },
 
             row_height: 32.0,
-            msg: String::new(),
+            info: Info { rect: Rect::NOTHING, min_rect: Rect::NOTHING, max_rect: Rect::NOTHING, viewport: Rect::NOTHING, x_scale: 0.0 },
         }
     }
 }
@@ -221,7 +277,7 @@ impl eframe::App for TemplateApp {
             url_window,
             err_window,
             row_height,
-            msg,
+            info,
         } = self;
 
         {
@@ -341,8 +397,7 @@ impl eframe::App for TemplateApp {
 
         egui::SidePanel::right("inspection_panel").show(ctx, |ui| {
             let scroll_area = egui::ScrollArea::both().auto_shrink([false; 2]);
-            scroll_area.show(ui, |ui| ui.label(&*msg));
-            msg.clear();
+            scroll_area.show(ui, |ui| info.show(ctx, ui));
             // scroll_area.show(ui, |ui| ctx.inspection_ui(ui));
             // ui.horizontal(|ui| {
             //     ui.label("url:");
@@ -493,13 +548,11 @@ impl eframe::App for TemplateApp {
                 }
                 let x_scale = x_scale.as_mut().unwrap();
 
-                *msg = format!(
-                    "rect: {rect:?}\n\
-                    min_rect: {min_rect:?}\n\
-                    max_rect: {max_rect:?},\n\
-                    viewport: {viewport:?}\n\
-                    x_scale: {x_scale:?}",
-                );
+                info.rect = rect;
+                info.min_rect = min_rect;
+                info.max_rect = max_rect;
+                info.viewport = viewport;
+                info.x_scale = *x_scale;
 
                 let wave_resp = ui
                     .allocate_ui_at_rect(rect, |ui| {
