@@ -2,6 +2,8 @@ use indexmap::map::IndexMap;
 use std::io;
 // use std::slice::Chunks;
 
+use std::hash::{Hash, Hasher};
+
 use std::collections::{btree_map, BTreeMap};
 pub use vcd::Value;
 
@@ -11,6 +13,18 @@ pub struct Signal {
     ix: BTreeMap<u64, usize>,
     values: SignalValues,
     width: usize,
+}
+
+impl Hash for Signal {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.ix.hash(state);
+        // vcd::Value is not hashable, so we have to wrap it
+        // let values: Vec<V> = match &self.values {
+        //     SignalValues::Values(vs) => vs.iter().map(|v| V(*v)).collect(),
+        // };
+        // values.hash(state);
+        self.width.hash(state);
+    }
 }
 
 #[derive(Debug)]

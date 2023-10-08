@@ -31,6 +31,8 @@ clap = { version = "4", features = [ "derive" ] }
 
 serde = { version = "1", features = ["derive"], optional = true }
 
+egui_dnd = "0.5.1"
+
 [features]
 default = []
 persistence = ["eframe/persistence", "serde"] # Enable if you want to persist app state on shutdown
@@ -49,8 +51,8 @@ persistence = ["eframe/persistence", "serde"] # Enable if you want to persist ap
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.7"
 tracing-wasm = "0.2"
-wasm-bindgen = "0.2.83"
-wasm-bindgen-futures = "0.4.33"
+wasm-bindgen = "0.2.87"
+wasm-bindgen-futures = "0.4.37"
 js-sys = "0.3"
 [target.'cfg(target_arch = "wasm32")'.dependencies.web-sys]
 version = "*"

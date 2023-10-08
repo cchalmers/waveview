@@ -8,7 +8,7 @@ use crate::vcd;
 pub struct Wave<'a> {
     scale: f32,
     view_range: RangeInclusive<f32>,
-    height: f32,
+    pub height: f32,
     name: &'a str,
     // wave_data: &'a [bool],
     wave_data: &'a vcd::Signal,

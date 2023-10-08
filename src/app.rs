@@ -25,6 +25,8 @@ pub struct TemplateApp {
     pub download: Arc<Mutex<Download>>,
     url_window: UrlWindow,
     err_window: ErrWindow,
+
+    row_height: f32,
 }
 
 impl TemplateApp {
@@ -63,6 +65,8 @@ impl TemplateApp {
                 open: false,
             },
             err_window: ErrWindow { msg: String::new(), open: false },
+
+            row_height: 32.0,
         }
     }
 }
@@ -136,7 +140,7 @@ struct ErrWindow {
 
 impl ErrWindow {
     fn show(&mut self, ctx: &egui::Context) {
-        let window = egui::Window::new("URL parse failed")
+        let window = egui::Window::new(self.msg.clone())
             .id(egui::Id::new("url failed"))
             .resizable(false)
             .collapsible(false)
@@ -190,34 +194,8 @@ impl UrlWindow {
 }
 
 impl eframe::App for TemplateApp {
-    // fn name(&self) -> &str {
-    //     "eframe template"
-    // }
-
-    // /// Called once before the first frame.
-    // fn setup(
-    //     &mut self,
-    //     _ctx: &egui::Context,
-    //     _frame: &epi::Frame,
-    //     _storage: Option<&dyn epi::Storage>,
-    // ) {
-    //     // #[cfg(feature = "persistence")]
-    //     // if let Some(storage) = _storage {
-    //     //     *self = epi::get_value(storage, epi::APP_KEY).unwrap_or_default()
-    //     // }
-    // }
-
-    /// Called by the frame work to save state before shutdown.
-    /// Note that you must enable the `persistence` feature for this to work.
-    #[cfg(feature = "persistence")]
-    fn save(&mut self, storage: &mut dyn epi::Storage) {
-        epi::set_value(storage, epi::APP_KEY, self);
-    }
-
     /// Called each time the UI needs repainting, which may be many times per second.
-    /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        // let Self { label, value } = self;
         let Self {
             wave_data,
             final_time,
@@ -232,6 +210,7 @@ impl eframe::App for TemplateApp {
             download,
             url_window,
             err_window,
+            row_height,
         } = self;
 
         {
@@ -293,12 +272,9 @@ impl eframe::App for TemplateApp {
             match Future::poll(future.as_mut(), &mut my_ctx) {
                 Poll::Pending => (),
                 Poll::Ready(shandle) => {
-                    match shandle {
-                        Some(handle) => {
-                            *wave_data = handle.wave_data;
-                            *final_time = handle.time;
-                        }
-                        None => (),
+                    if let Some(handle) = shandle {
+                        *wave_data = handle.wave_data;
+                        *final_time = handle.time;
                     }
                     *a_future = None;
                     *open_file_ctx = None;
@@ -358,83 +334,77 @@ impl eframe::App for TemplateApp {
         // let main_viewport = std::rc::Rc::new(std::cell::Cell::new(None));
         // let mut main_viewport = None;
 
+        let mut dragging = false;
+
         egui::SidePanel::left("side_panel").show(ctx, |ui| {
             ui.set_width(180.0);
             let max_rect = ui.max_rect();
-            // max_rect.max.x += 100.0;
 
-            let row_height_sans_spacing = 32.0;
+            ui.horizontal(|ui| {
+                // TODO adjust scroll offset so you don't move when changing height
+                ui.add(egui::Slider::new(row_height, 25.0..=100.0).text("height"));
+            });
+            // ui.separator();
+
             let spacing = ui.spacing().item_spacing;
-            let row_height_with_spacing = row_height_sans_spacing + spacing.y;
+            let row_height_with_spacing = *row_height + spacing.y;
 
             use egui::*;
 
             let viewport =
-                Rect::from_min_size(egui::pos2(8.0, 16.0 - *y_offset), egui::vec2(180.0, 800.0));
+                Rect::from_min_size(egui::pos2(8.0, 16.0 - *y_offset), egui::vec2(180.0, 900.0));
 
-            // eprintln!("viewport = {viewport:?}");
             let mut ui = ui.child_ui(viewport, *ui.layout());
-            // let viewport = main_viewport.unwrap();
+
             let mut content_clip_rect = max_rect.expand(ui.visuals().clip_rect_margin);
+
             // add clipping for the "timeline" bar
             content_clip_rect.min.y += 25.0;
+            // add clipping for the separator
+            // content_clip_rect.min.y += 2.0;
             ui.set_clip_rect(content_clip_rect);
             let num_rows = wave_data.len();
             ui.set_height((row_height_with_spacing * num_rows as f32 - spacing.y).at_least(0.0));
-            // let min_row = (viewport.min.y / row_height_with_spacing)
+            // let min_row = (viewport.min.y / row_height_with_spacing);
             let min_row = (*y_offset / row_height_with_spacing).floor().at_least(0.0) as usize;
             // let max_row = (viewport.max.y / row_height_with_spacing).ceil() as usize + 1;
             let max_row =
                 ((*y_offset + max_rect.size().y) / row_height_with_spacing).ceil() as usize + 1;
             let max_row = max_row.at_most(num_rows);
 
-            ui.set_height((row_height_with_spacing * num_rows as f32 - spacing.y).at_least(0.0));
+            ui.set_height((row_height_with_spacing * num_rows as f32 + spacing.y).at_least(0.0));
             let max_row = max_row.at_most(num_rows);
 
-            let y_min = ui.max_rect().top() + min_row as f32 * row_height_with_spacing;
-            let y_max = ui.max_rect().top() + max_row as f32 * row_height_with_spacing;
+            // let y_min = ui.max_rect().top() + min_row as f32 * row_height_with_spacing;
+            // let y_max = ui.max_rect().top() + max_row as f32 * row_height_with_spacing;
 
-            let rect = egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), y_min..=y_max);
+            // let rect = egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), y_min..=y_max);
 
-            ui.allocate_ui_at_rect(rect, |ui| {
-                ui.skip_ahead_auto_ids(min_row); // Make sure we get consistent IDs.
-                                                 // ui.vertical(|ui| {
-                                                 // ui.vertical_centered(|ui| {
-                ui.with_layout(egui::Layout::top_down(egui::Align::Max), |ui| {
-                    ui.scope(|ui| ui.set_height(16.0 + 24.0));
-                    for d in wave_data.iter().take(max_row).skip(min_row) {
-                        ui.scope(|ui| {
-                            // ui.set_height(32.0 - 12.0);
-                            ui.set_height(32.0);
-                            ui.label(&d.0);
-                        });
-                    }
-                });
-            })
-            .inner
-            // use egui::*;
-            // let mut shapes = vec![];
-            // let color = Color32::from_additive_luminance(196);
-            // // ui.allocate_ui_at_rect(rect, |ui| {
-            // //     ui.skip_ahead_auto_ids(min_row); // Make sure we get consistent IDs.
-            // //     ui.vertical(|ui| {
-            //         for i in min_row..max_row {
-            // //             ui.group(|ui| {
-            //                 let font = epaint::text::FontId::new(12.0, text::FontFamily::Monospace);
-            //                 let txt = &wave_data[i].0;
-            //                 let galley = ui.fonts().layout_no_wrap(txt.to_string(), font, color);
-            //                 let pos = pos2(5.0, i as f32 * 32.0);
-            //                 let anchor = Align2::CENTER_CENTER;
-            //                 let rect = anchor.anchor_rect(Rect::from_min_size(pos, galley.size()));
-            //                 shapes.push(Shape::galley(rect.min, galley));
-            //                 // ui.set_height(32.0 - 12.0);
-            //                 // ui.label(&wave_data[i].0);
-            //             // });
-            //         }
-            //     // });
-            // // })
-            // // .inner;
-            // ui.painter().extend(shapes);
+            use egui_dnd::DragDropItem;
+
+            // TODO fix this changing x scroll in main window
+            egui_dnd::dnd(&mut ui, "dnd").show_custom_vec(wave_data, |ui, wave_data, iter| {
+                // 32 looks better with default layout but 25 looks better with top_down/centered
+                // ui.horizontal(|ui| ui.set_height(32.0 + row_height_with_spacing * min_row as f32));
+                ui.horizontal(|ui| ui.set_height(25.0 + row_height_with_spacing * min_row as f32));
+                for (i, d) in wave_data.iter().enumerate().take(max_row).skip(min_row) {
+                    iter.next(ui, d.id(), i, true, |ui, item_handle| {
+                        item_handle.ui(ui, |ui, handle, state| {
+                            dragging |= state.dragged;
+                            ui.horizontal(|ui| {
+                                ui.set_height(*row_height);
+                                handle.ui(ui, |ui| {
+                                    ui.with_layout(Layout::top_down(egui::Align::Max), |ui| {
+                                        ui.horizontal_centered(|ui| {
+                                            ui.label(&d.0);
+                                        });
+                                    });
+                                });
+                            });
+                        })
+                    });
+                }
+            });
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -455,9 +425,9 @@ impl eframe::App for TemplateApp {
 
             let num_rows = wave_data.len();
 
-            let row_height_sans_spacing = 32.0;
+            // let row_height_sans_spacing = 32.0;
             let spacing = ui.spacing().item_spacing;
-            let row_height_with_spacing = row_height_sans_spacing + spacing.y;
+            let row_height_with_spacing = *row_height + spacing.y;
 
             scroll_area.show_viewport(ui, |ui, viewport| {
                 // this is kinda nasty because you end up with a 1 frame lag between the waves and
@@ -492,17 +462,12 @@ impl eframe::App for TemplateApp {
 
                 let wave_resp = ui
                     .allocate_ui_at_rect(rect, |ui| {
-                        // let mut max_rect = ui.max_rect();
-                        // let mut content_clip_rect = max_rect.expand(ui.visuals().clip_rect_margin);
-                        // // add clipping for the "timeline" bar
-                        // content_clip_rect.
-                        // ui.set_clip_rect(content_clip_rect);
                         let mut clip_rect = ui.clip_rect();
                         clip_rect.min.y += 16.0;
                         ui.set_clip_rect(clip_rect);
                         ui.skip_ahead_auto_ids(min_row); // Make sure we get consistent IDs.
                         let resp = ui.interact(
-                            egui::Rect::EVERYTHING,
+                            egui::Rect::everything_right_of(rect.left()),
                             egui::Id::new("ui_hover"),
                             // if I change this to hover, I can click and drag to move waves around
                             egui::Sense::click_and_drag(),
@@ -519,24 +484,25 @@ impl eframe::App for TemplateApp {
                         ui.vertical(|ui| {
                             for d in wave_data.iter().take(max_row).skip(min_row) {
                                 let name = format!(
-                                    "{}
-hover_pos: {hover_pos:?}
-clip_rect: {clip_rect:?}
-min_rect: {min_rect:?}
-max_rect: {max_rect:?},
-viewport: {viewport:?}
-x_frac: {x_frac:?}
-x_val: {x_val:?}
-x_scale: {x_scale:?}",
+                                    "{}\n\
+                                    rect: {rect:?}\n\
+                                    hover_pos: {hover_pos:?}\n\
+                                    clip_rect: {clip_rect:?}\n\
+                                    min_rect: {min_rect:?}\n\
+                                    max_rect: {max_rect:?},\n\
+                                    viewport: {viewport:?}\n\
+                                    x_frac: {x_frac:?}\n\
+                                    x_val: {x_val:?}\n\
+                                    x_scale: {x_scale:?}",
                                     d.0
                                 );
-                                let wave = wave::Wave::new(
+                                let mut wave = wave::Wave::new(
                                     &name,
                                     *x_scale,
                                     viewport.min.x..=viewport.max.x,
                                     &d.1,
                                 );
-                                // wave.ui(ui, &ctx.fonts());
+                                wave.height = *row_height;
                                 wave.ui(ui);
                             }
                         });
