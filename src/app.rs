@@ -27,6 +27,8 @@ pub struct TemplateApp {
     err_window: ErrWindow,
 
     row_height: f32,
+
+    msg: String,
 }
 
 impl TemplateApp {
@@ -67,6 +69,7 @@ impl TemplateApp {
             err_window: ErrWindow { msg: String::new(), open: false },
 
             row_height: 32.0,
+            msg: String::new(),
         }
     }
 }
@@ -140,13 +143,13 @@ struct ErrWindow {
 
 impl ErrWindow {
     fn show(&mut self, ctx: &egui::Context) {
-        let window = egui::Window::new(self.msg.clone())
-            .id(egui::Id::new("url failed"))
-            .resizable(false)
+        let window = egui::Window::new("Error")
+            .id(egui::Id::new("error_window"))
+            .resizable(true)
             .collapsible(false)
             .title_bar(true)
-            .open(&mut self.open)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]);
+            .open(&mut self.open);
+        // .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]);
         window.show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.label(&self.msg);
@@ -165,15 +168,19 @@ impl UrlWindow {
         if self.open {
             let window = egui::Window::new("Open URL")
                 .id(egui::Id::new("open_url"))
-                .resizable(false)
+                .resizable(true)
                 .collapsible(false)
                 .title_bar(true)
-                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]);
+                .open(&mut self.open)
+                .default_size(egui::vec2(600.0, 100.0))
+                .default_pos(egui::pos2(0.0, 0.0));
+            let mut close = false;
             window.show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label("url:");
-                    ui.text_edit_singleline(&mut self.url);
-                });
+                ui.set_width(ui.available_width());
+                ui.label("url:");
+                egui::TextEdit::singleline(&mut self.url)
+                    .desired_width(ui.available_width())
+                    .show(ui);
                 ui.horizontal(|ui| {
                     if ui.button("fetch").clicked() {
                         let request = ehttp::Request::get(&self.url);
@@ -185,10 +192,13 @@ impl UrlWindow {
                             ctx2.request_repaint();
                         });
                         ctx.request_repaint();
-                        self.open = false;
+                        close = true;
                     }
                 });
             });
+            if close {
+                self.open = false;
+            }
         }
     }
 }
@@ -211,6 +221,7 @@ impl eframe::App for TemplateApp {
             url_window,
             err_window,
             row_height,
+            msg,
         } = self;
 
         {
@@ -328,8 +339,30 @@ impl eframe::App for TemplateApp {
             });
         });
 
-        url_window.show(ctx, download);
-        err_window.show(ctx);
+        egui::SidePanel::right("inspection_panel").show(ctx, |ui| {
+            let scroll_area = egui::ScrollArea::both().auto_shrink([false; 2]);
+            scroll_area.show(ui, |ui| ui.label(&*msg));
+            msg.clear();
+            // scroll_area.show(ui, |ui| ctx.inspection_ui(ui));
+            // ui.horizontal(|ui| {
+            //     ui.label("url:");
+            //     ui.text_edit_singleline(&mut self.url);
+            // });
+            // ui.horizontal(|ui| {
+            //     if ui.button("fetch").clicked() {
+            //         let request = ehttp::Request::get(&self.url);
+            //         let dl = download.clone();
+            //         *dl.lock().unwrap() = Download::InProgress;
+            //         let ctx2 = ctx.clone();
+            //         ehttp::fetch(request, move |response| {
+            //             *dl.lock().unwrap() = Download::Done(response);
+            //             ctx2.request_repaint();
+            //         });
+            //         ctx.request_repaint();
+            //         self.open = false;
+            //     }
+            // });
+        });
 
         // let main_viewport = std::rc::Rc::new(std::cell::Cell::new(None));
         // let mut main_viewport = None;
@@ -460,6 +493,14 @@ impl eframe::App for TemplateApp {
                 }
                 let x_scale = x_scale.as_mut().unwrap();
 
+                *msg = format!(
+                    "rect: {rect:?}\n\
+                    min_rect: {min_rect:?}\n\
+                    max_rect: {max_rect:?},\n\
+                    viewport: {viewport:?}\n\
+                    x_scale: {x_scale:?}",
+                );
+
                 let wave_resp = ui
                     .allocate_ui_at_rect(rect, |ui| {
                         let mut clip_rect = ui.clip_rect();
@@ -476,28 +517,15 @@ impl eframe::App for TemplateApp {
 
                         let x_frac = hover_pos
                             .map(|hover_pos| (hover_pos.x - min_rect.min.x) / min_rect.width());
-                        let x_val = x_frac.map(|x_frac| {
-                            (viewport.min.x + x_frac * (viewport.max.x - viewport.min.x))
-                                / 32.0
-                                / *x_scale
-                        });
+                        // let x_val = x_frac.map(|x_frac| {
+                        //     (viewport.min.x + x_frac * (viewport.max.x - viewport.min.x))
+                        //         / 32.0
+                        //         / *x_scale
+                        // });
                         ui.vertical(|ui| {
                             for d in wave_data.iter().take(max_row).skip(min_row) {
-                                let name = format!(
-                                    "{}\n\
-                                    rect: {rect:?}\n\
-                                    hover_pos: {hover_pos:?}\n\
-                                    clip_rect: {clip_rect:?}\n\
-                                    min_rect: {min_rect:?}\n\
-                                    max_rect: {max_rect:?},\n\
-                                    viewport: {viewport:?}\n\
-                                    x_frac: {x_frac:?}\n\
-                                    x_val: {x_val:?}\n\
-                                    x_scale: {x_scale:?}",
-                                    d.0
-                                );
                                 let mut wave = wave::Wave::new(
-                                    &name,
+                                    &d.0,
                                     *x_scale,
                                     viewport.min.x..=viewport.max.x,
                                     &d.1,
@@ -652,6 +680,9 @@ impl eframe::App for TemplateApp {
                 ui.painter().extend(ticks);
             });
         });
+
+        url_window.show(ctx, download);
+        err_window.show(ctx);
 
         self.ui_file_drag_and_drop(ctx);
 
