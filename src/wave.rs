@@ -1,5 +1,5 @@
 use eframe::egui;
-use egui::widgets::plot::PlotPoint;
+use egui_plot::PlotPoint;
 use egui::*;
 use std::ops::RangeInclusive;
 // use std::ops::RangeInclusive;
@@ -94,6 +94,8 @@ impl<'a> Wave<'a> {
                 rounding: Rounding::same(2.0),
                 fill: ui.visuals().extreme_bg_color,
                 stroke: ui.visuals().widgets.noninteractive.bg_stroke,
+                fill_texture_id: Default::default(),
+                uv: rect,
             });
         }
 

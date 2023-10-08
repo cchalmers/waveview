@@ -657,7 +657,7 @@ impl eframe::App for TemplateApp {
                         let pp0 = pos2(rounded_x, max_rect.min.y + 16.0);
                         shapes.push(Shape::rect_filled(
                             egui::Rect::from_two_pos(pp0, p1),
-                            egui::Rounding::none(),
+                            egui::Rounding::ZERO,
                             yellow.linear_multiply(0.1),
                         ));
                     }
