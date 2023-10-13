@@ -436,6 +436,7 @@ impl eframe::App for TemplateApp {
 
             ui.horizontal(|ui| {
                 // TODO adjust scroll offset so you don't move when changing height
+                ui.label("🔎");
                 let _resp = ui.text_edit_singleline(search_text);
             });
             // ui.separator();
