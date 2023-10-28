@@ -837,5 +837,6 @@ impl TemplateApp {
                 self.wave_data = mk_wave_data(sigs);
             }
         }
+        self.dropped_files.clear();
     }
 }
