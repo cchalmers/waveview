@@ -325,16 +325,15 @@ pub fn read_clocked_vcd(
 
     let mut time = 0;
 
-    for command in parser {
+    while let Some(command) = parser.next() {
         use vcd::Command::*;
-        // eprintln!("{command:?}");
-        match command? {
-            Timestamp(t) => time = t,
-            ChangeScalar(i, v) => {
+        match command {
+            Ok(Timestamp(t)) => time = t,
+            Ok(ChangeScalar(i, v)) => {
                 let signal = signal_map.get_mut(&i).unwrap();
                 signal.insert_bit(time, v);
             }
-            ChangeVector(i, v) => {
+            Ok(ChangeVector(i, v)) => {
                 // panic!("can't change vector yet");
                 if let Some(signal) = signal_map.get_mut(&i) {
                     signal.insert(time, v.into());
@@ -342,8 +341,15 @@ pub fn read_clocked_vcd(
                     eprintln!("id {i:?} not found");
                 }
             }
-            ChangeString(_i, s) => {
-                eprintln!("I saw a ChangeString '{s}'");
+            Err(err) => {
+                if let Some(err) = err.get_ref() {
+                    if let Some(err) = err.downcast_ref::<vcd::ParseError>() {
+                        log::warn!("vcd parse error: {}", err);
+                        parser.reader().read_line(&mut String::new())?;
+                    }
+                } else {
+                    return Err(err);
+                }
             }
             _ => (),
         }
