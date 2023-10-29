@@ -1,3 +1,4 @@
+// list taken from https://github.com/wavedrom/vcd-samples
 const SAMPLES: &[&str] = &[
 // GitHub
 
@@ -14,8 +15,8 @@ const SAMPLES: &[&str] = &[
 
 // - GHDL
 "github=AdoobII/idea_21s/main/vhdl/idea.vcd",
-"github=yne/vcd/master/plasma.vcd",
-"github=yne/vcd/master/sample.vcd",
+// "github=yne/vcd/master/plasma.vcd",
+// "github=yne/vcd/master/sample.vcd",
 "github=charlycop/VLSI-1/master/EXEC/ALU/alu.vcd",
 "github=gaoqqt2n/CPU/master/SuperPipelineCPU/vcdfile/pcpu.vcd",
 
