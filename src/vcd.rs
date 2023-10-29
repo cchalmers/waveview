@@ -109,7 +109,7 @@ impl Signal {
     }
 
     pub fn insert(&mut self, time: u64, value: Vec<Value>) {
-        eprintln!("insert(time = {time}, value = {value:?})");
+        // eprintln!("insert(time = {time}, value = {value:?})");
         // if self.width != value.len() {
         //     eprintln!("{} != {}", self.width, value.len());
         // }
@@ -310,7 +310,19 @@ pub fn read_clocked_vcd(
     // but this can be interleaved in the vcd files.
 
     // Parse the header and find the wires
-    let header = parser.parse_header()?;
+    let header = match parser.parse_header() {
+        Ok(header) => header,
+        Err(err) => {
+            if let Some(err2) = err.get_ref() {
+                if let Some(err) = err2.downcast_ref::<vcd::ParseError>() {
+                    log::warn!("vcd header parse error: {}", err);
+                }
+                return Err(err);
+            } else {
+                return Err(err);
+            }
+        }
+    };
     let mut id_map: IndexMap<vcd::IdCode, ScopedVar> = IndexMap::new();
     let mut signal_map: IndexMap<vcd::IdCode, Signal> = IndexMap::new();
 
@@ -329,16 +341,16 @@ pub fn read_clocked_vcd(
         use vcd::Command::*;
         match command {
             Ok(Timestamp(t)) => time = t,
-            Ok(ChangeScalar(i, v)) => {
-                let signal = signal_map.get_mut(&i).unwrap();
-                signal.insert_bit(time, v);
-            }
+            Ok(ChangeScalar(i, v)) => match signal_map.get_mut(&i) {
+                Some(signal) => signal.insert(time, vec![v]),
+                None => log::warn!("ChangeScalar id {i:?} not found"),
+            },
             Ok(ChangeVector(i, v)) => {
                 // panic!("can't change vector yet");
                 if let Some(signal) = signal_map.get_mut(&i) {
                     signal.insert(time, v.into());
                 } else {
-                    eprintln!("id {i:?} not found");
+                    log::warn!("id {i:?} not found");
                 }
             }
             Err(err) => {

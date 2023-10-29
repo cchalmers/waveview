@@ -29,10 +29,16 @@ pub struct TemplateApp {
 
     row_height: f32,
 
-    show_info: bool,
+    side_panel: SidePanel,
     info: Info,
 
     search_text: String,
+}
+
+enum SidePanel {
+    None,
+    Info,
+    Samples,
 }
 
 struct Info {
@@ -129,7 +135,7 @@ impl TemplateApp {
 
             row_height: 32.0,
 
-            show_info: cfg!(debug_assertions),
+            side_panel: if cfg!(debug_assertions) { SidePanel::Info } else { SidePanel::None },
             info: Info { rect: Rect::NOTHING, min_rect: Rect::NOTHING, max_rect: Rect::NOTHING, viewport: Rect::NOTHING, x_scale: 0.0 },
 
             search_text: String::new(),
@@ -284,7 +290,7 @@ impl eframe::App for TemplateApp {
             url_window,
             err_window,
             row_height,
-            show_info,
+            side_panel,
             info,
             search_text,
         } = self;
@@ -403,14 +409,46 @@ impl eframe::App for TemplateApp {
                 });
                 ui.menu_button("View", |ui| {
                     ui.add(egui::Slider::new(row_height, 25.0..=128.0).text("height"));
-                    if *show_info {
-                        if ui.button("Hide info").clicked() {
-                            *show_info = false;
-                            ui.close_menu();
+                    // if *show_info {
+                    //     if ui.button("Hide info").clicked() {
+                    //         *show_info = false;
+                    //         ui.close_menu();
+                    //     }
+                    // } else if ui.button("Show info").clicked() {
+                    //     *show_info = true;
+                    //     ui.close_menu();
+                    // }
+                    match side_panel {
+                        SidePanel::None => {
+                            if ui.button("Show info").clicked() {
+                                *side_panel = SidePanel::Info;
+                                ui.close_menu();
+                            }
+                            if ui.button("Show samples").clicked() {
+                                *side_panel = SidePanel::Samples;
+                                ui.close_menu();
+                            }
                         }
-                    } else if ui.button("Show info").clicked() {
-                        *show_info = true;
-                        ui.close_menu();
+                        SidePanel::Info => {
+                            if ui.button("Hide info").clicked() {
+                                *side_panel = SidePanel::None;
+                                ui.close_menu();
+                            }
+                            if ui.button("Show samples").clicked() {
+                                *side_panel = SidePanel::Samples;
+                                ui.close_menu();
+                            }
+                        }
+                        SidePanel::Samples => {
+                            if ui.button("Show info").clicked() {
+                                *side_panel = SidePanel::Info;
+                                ui.close_menu();
+                            }
+                            if ui.button("Hide samples").clicked() {
+                                *side_panel = SidePanel::None;
+                                ui.close_menu();
+                            }
+                        }
                     }
 
                     // ui.button("
@@ -418,11 +456,38 @@ impl eframe::App for TemplateApp {
             });
         });
 
-        if *show_info {
-            egui::SidePanel::right("inspection_panel").show(ctx, |ui| {
-                let scroll_area = egui::ScrollArea::both().auto_shrink([false; 2]);
-                scroll_area.show(ui, |ui| info.show(ctx, ui));
-            });
+        // if *show_info {
+        //     egui::SidePanel::right("inspection_panel").show(ctx, |ui| {
+        //         let scroll_area = egui::ScrollArea::both().auto_shrink([false; 2]);
+        //         scroll_area.show(ui, |ui| info.show(ctx, ui));
+        //     });
+        // }
+        match side_panel {
+            SidePanel::None => (),
+            SidePanel::Info => {
+                egui::SidePanel::right("inspection_panel").show(ctx, |ui| {
+                    let scroll_area = egui::ScrollArea::both().auto_shrink([false; 2]);
+                    scroll_area.show(ui, |ui| info.show(ctx, ui));
+                });
+            }
+            SidePanel::Samples => {
+                egui::SidePanel::right("inspection_panel").show(ctx, |ui| {
+                    let scroll_area = egui::ScrollArea::both().auto_shrink([false; 2]);
+                    let resp = scroll_area.show(ui, crate::samples::show_samples);
+                    if let Some(url) = resp.inner {
+                        eprintln!("url: {}", url);
+                        let request = ehttp::Request::get(url);
+                        let dl = download.clone();
+                        *dl.lock().unwrap() = Download::InProgress;
+                        let ctx2 = ctx.clone();
+                        ehttp::fetch(request, move |response| {
+                            *dl.lock().unwrap() = Download::Done(response);
+                            ctx2.request_repaint();
+                        });
+                        ctx.request_repaint();
+                    }
+                });
+            }
         }
 
         // let main_viewport = std::rc::Rc::new(std::cell::Cell::new(None));
@@ -579,10 +644,16 @@ impl eframe::App for TemplateApp {
                         ui.set_clip_rect(clip_rect);
                         ui.skip_ahead_auto_ids(min_row); // Make sure we get consistent IDs.
                         let resp = ui.interact(
-                            egui::Rect::everything_right_of(rect.left()),
+                            // egui::Rect::everything_right_of(rect.left()),
+                            egui::Rect::from_x_y_ranges(
+                                ui.max_rect().x_range(),
+                                y_min + 16.0..=y_max,
+                            ),
                             egui::Id::new("ui_hover"),
                             // if I change this to hover, I can click and drag to move waves around
-                            egui::Sense::click_and_drag(),
+                            // egui::Sense::click_and_drag(),
+                            egui::Sense::hover(),
+                            // egui::Sense::
                         );
                         let hover_pos = resp.hover_pos();
 
