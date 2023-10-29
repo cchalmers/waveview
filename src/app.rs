@@ -135,7 +135,7 @@ impl TemplateApp {
 
             row_height: 32.0,
 
-            side_panel: if cfg!(debug_assertions) { SidePanel::Info } else { SidePanel::None },
+            side_panel: if cfg!(debug_assertions) { SidePanel::Samples } else { SidePanel::None },
             info: Info { rect: Rect::NOTHING, min_rect: Rect::NOTHING, max_rect: Rect::NOTHING, viewport: Rect::NOTHING, x_scale: 0.0 },
 
             search_text: String::new(),
@@ -643,16 +643,13 @@ impl eframe::App for TemplateApp {
                         clip_rect.min.y += 16.0;
                         ui.set_clip_rect(clip_rect);
                         ui.skip_ahead_auto_ids(min_row); // Make sure we get consistent IDs.
+                                                         // let the_x_offset = x_offset.unwrap_or(0.0);
                         let resp = ui.interact(
-                            // egui::Rect::everything_right_of(rect.left()),
-                            egui::Rect::from_x_y_ranges(
-                                ui.max_rect().x_range(),
-                                y_min + 16.0..=y_max,
-                            ),
+                            max_rect,
                             egui::Id::new("ui_hover"),
                             // if I change this to hover, I can click and drag to move waves around
-                            // egui::Sense::click_and_drag(),
-                            egui::Sense::hover(),
+                            egui::Sense::click_and_drag(),
+                            // egui::Sense::hover(),
                             // egui::Sense::
                         );
                         let hover_pos = resp.hover_pos();
@@ -756,6 +753,11 @@ impl eframe::App for TemplateApp {
                 if wave_resp.drag_released() {
                     *drag_time_start = None;
                 }
+
+                let mut clip_rect = ui.clip_rect();
+                clip_rect.min.x = rect.min.x;
+                clip_rect.max.x = rect.max.x;
+                ui.set_clip_rect(clip_rect);
 
                 let rect = egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), y_min..=16.0);
                 let x_min = (main_viewport.min.x / 32.0 / *x_scale).floor() as usize;

@@ -22,13 +22,13 @@ fn main() {
         "waveview",
         native_options,
         Box::new(move |_cc| {
-            let mut file = if let Some(path) = &opt.starting_file {
-                std::fs::File::open(path).unwrap()
+            let (signals, time) = if let Some(path) = &opt.starting_file {
+                let file = std::fs::File::open(path).unwrap();
+                let mut buf_file = std::io::BufReader::new(file);
+                waveview::vcd::read_clocked_vcd(&mut buf_file).unwrap()
             } else {
-                std::fs::File::open("/Users/chris/Dev/egui/waveview/mlp512b4c1.vcd").unwrap()
+                (vec![], 1)
             };
-            let mut buf_file = std::io::BufReader::new(&mut file);
-            let (signals, time) = waveview::vcd::read_clocked_vcd(&mut buf_file).unwrap();
             Box::new(waveview::TemplateApp::new(signals, time))
         }),
     )
