@@ -401,7 +401,7 @@ impl eframe::App for TemplateApp {
                     }
                     #[cfg(not(target_arch = "wasm32"))]
                     if ui.button("Quit").clicked() {
-                        frame.close();
+                        ctx.send_viewport_cmd(ViewportCommand::Close);
                     }
                     // annoying warning
                     #[cfg(target_arch = "wasm32")]
