@@ -35,7 +35,7 @@ egui_dnd = "0.5.1"
 egui_plot = "0.23.0"
 
 [features]
-default = []
+default = ["persistence"]
 persistence = ["eframe/persistence", "serde"] # Enable if you want to persist app state on shutdown
 
 # [profile.release]

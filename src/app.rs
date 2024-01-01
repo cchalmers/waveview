@@ -10,37 +10,77 @@ use std::sync::{Arc, Mutex};
 use std::future::Future;
 use std::task::Poll;
 
+#[derive(serde::Deserialize, serde::Serialize)]
+#[serde(default)]
 pub struct TemplateApp {
-    // wave_data: Vec<(String, Vec<bool>)>,
+    #[serde(skip)]
     wave_data: Vec<(String, vcd::Signal)>,
     x_scale: Option<f32>,
     final_time: u64,
     x_offset: Option<f32>,
     y_offset: f32,
     drag_time_start: Option<usize>,
+    #[serde(skip)]
     dropped_files: Vec<egui::DroppedFile>,
     main_viewport: egui::Rect,
     // a_future: Option<std::pin::Pin<Box<dyn Future<Output = Option<rfd::FileHandle>>>>>,
+    #[serde(skip)]
     a_future: Option<std::pin::Pin<Box<dyn Future<Output = Option<OpenedVcd>>>>>,
+    #[serde(skip)]
     open_file_ctx: Option<OpenFileCtx>,
+    #[serde(skip)]
     pub download: Arc<Mutex<Download>>,
+    #[serde(skip)]
     url_window: UrlWindow,
+    #[serde(skip)]
     err_window: ErrWindow,
-
     row_height: f32,
-
     side_panel: SidePanel,
     info: Info,
-
     search_text: String,
 }
 
+impl Default for TemplateApp {
+    fn default() -> Self {
+        Self {
+            wave_data: vec![],
+            x_scale: None,
+            x_offset: None,
+            y_offset: 0.0,
+            final_time: 1,
+            drag_time_start: None,
+            dropped_files: vec![],
+            main_viewport: egui::Rect::from_min_size(
+                egui::pos2(0.0, 0.0),
+                egui::vec2(100.0, 800.0),
+            ),
+            a_future: None,
+            open_file_ctx: None,
+            download: Arc::new(Mutex::new(Download::None)),
+            url_window: UrlWindow {
+                url: "".to_owned(),
+                open: false,
+            },
+            err_window: ErrWindow { msg: String::new(), open: false },
+
+            row_height: 32.0,
+
+            side_panel: if cfg!(debug_assertions) { SidePanel::Samples } else { SidePanel::None },
+            info: Info { rect: Rect::NOTHING, min_rect: Rect::NOTHING, max_rect: Rect::NOTHING, viewport: Rect::NOTHING, x_scale: 0.0 },
+
+            search_text: String::new(),
+        }
+    }
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
 enum SidePanel {
     None,
     Info,
     Samples,
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
 struct Info {
     rect: Rect,
     min_rect: Rect,
@@ -97,7 +137,13 @@ impl Info {
 }
 
 impl TemplateApp {
-    pub fn new(sigs: Vec<(vcd::ScopedVar, vcd::Signal)>, final_time: u64) -> TemplateApp {
+    pub fn new(cc: &eframe::CreationContext<'_>, sigs: Vec<(vcd::ScopedVar, vcd::Signal)>, final_time: u64) -> TemplateApp {
+        if let Some(storage) = cc.storage {
+            if let Some(app) = eframe::get_value(storage, eframe::APP_KEY) {
+                return app;
+            }
+        }
+
         let wave_data = sigs
             .into_iter()
             .map(|(var, sig)| {
@@ -273,8 +319,13 @@ impl UrlWindow {
 }
 
 impl eframe::App for TemplateApp {
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        eprintln!("save");
+        eframe::set_value(storage, eframe::APP_KEY, self);
+    }
+
     /// Called each time the UI needs repainting, which may be many times per second.
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let Self {
             wave_data,
             final_time,

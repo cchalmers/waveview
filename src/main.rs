@@ -17,11 +17,19 @@ fn main() {
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .init();
-    let native_options = eframe::NativeOptions::default();
+    let native_options = eframe::NativeOptions {
+        window_builder: Some(Box::new(|viewport| {
+            viewport
+                .with_title("waveview")
+                .with_inner_size((1536.0, 768.0))
+        })),
+        follow_system_theme: false,
+        ..Default::default()
+    };
     eframe::run_native(
         "waveview",
         native_options,
-        Box::new(move |_cc| {
+        Box::new(move |cc| {
             let (signals, time) = if let Some(path) = &opt.starting_file {
                 let file = std::fs::File::open(path).unwrap();
                 let mut buf_file = std::io::BufReader::new(file);
@@ -29,7 +37,7 @@ fn main() {
             } else {
                 (vec![], 1)
             };
-            Box::new(waveview::TemplateApp::new(signals, time))
+            Box::new(waveview::TemplateApp::new(cc, signals, time))
         }),
     )
     .unwrap();
@@ -51,7 +59,7 @@ fn main() {
                 "the_canvas_id", // hardcode it
                 web_options,
                 Box::new(|cc| {
-                    let app = waveview::TemplateApp::new(signals, 1);
+                    let app = waveview::TemplateApp::new(cc, signals, 1);
                     if let Some(Ok(s)) = web_sys::window().map(|w| w.location().search()) {
                         if let Some(url) = s.strip_prefix('?') {
                             let request = ehttp::Request::get(url);
