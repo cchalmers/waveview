@@ -805,11 +805,6 @@ impl eframe::App for TemplateApp {
                     *drag_time_start = None;
                 }
 
-                let mut clip_rect = ui.clip_rect();
-                clip_rect.min.x = rect.min.x;
-                clip_rect.max.x = rect.max.x;
-                ui.set_clip_rect(clip_rect);
-
                 let rect = egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), y_min..=16.0);
                 let x_min = (main_viewport.min.x / 32.0 / *x_scale).floor() as usize;
                 let x_max = (main_viewport.max.x / 32.0 / *x_scale).ceil() as usize;
