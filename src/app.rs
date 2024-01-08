@@ -13,7 +13,6 @@ use std::task::Poll;
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)]
 pub struct TemplateApp {
-    #[serde(skip)]
     wave_data: Vec<(String, vcd::Signal)>,
     x_scale: Option<f32>,
     final_time: u64,

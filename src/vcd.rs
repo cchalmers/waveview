@@ -5,9 +5,9 @@ use std::io;
 use std::hash::{Hash, Hasher};
 
 use std::collections::{btree_map, BTreeMap};
-pub use vcd::Value;
+// pub use vcd::Value;
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct Signal {
     // index into the values
     ix: BTreeMap<u64, usize>,
@@ -27,7 +27,37 @@ impl Hash for Signal {
     }
 }
 
-#[derive(Debug)]
+impl From<vcd::Value> for Value {
+    fn from(v: vcd::Value) -> Self {
+        match v {
+            vcd::Value::V0 => Value::V0,
+            vcd::Value::V1 => Value::V1,
+            vcd::Value::X => Value::X,
+            vcd::Value::Z => Value::Z,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, serde::Serialize, serde::Deserialize)]
+pub enum Value {
+    /// Logic low
+    ///
+    /// (prefixed with `V` to make a valid Rust identifier)
+    V0,
+
+    /// Logic high
+    ///
+    /// (prefixed with `V` to make a valid Rust identifier)
+    V1,
+
+    /// An uninitialized or unknown value
+    X,
+
+    /// The "high-impedance" value
+    Z,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 enum SignalValues {
     // done in chunks of the signal width
     Values(Vec<Value>),
@@ -342,13 +372,13 @@ pub fn read_clocked_vcd(
         match command {
             Ok(Timestamp(t)) => time = t,
             Ok(ChangeScalar(i, v)) => match signal_map.get_mut(&i) {
-                Some(signal) => signal.insert(time, vec![v]),
+                Some(signal) => signal.insert(time, vec![v.into()]),
                 None => log::warn!("ChangeScalar id {i:?} not found"),
             },
             Ok(ChangeVector(i, v)) => {
                 // panic!("can't change vector yet");
                 if let Some(signal) = signal_map.get_mut(&i) {
-                    signal.insert(time, v.into());
+                    signal.insert(time, v.iter().map(|x| x.into()).collect());
                 } else {
                     log::warn!("id {i:?} not found");
                 }
