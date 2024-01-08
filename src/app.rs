@@ -449,6 +449,16 @@ impl eframe::App for TemplateApp {
                         url_window.open = true;
                         ui.close_menu();
                     }
+                    if ui.button("Reset").clicked() {
+                        *wave_data = vec![];
+                        *final_time = 1;
+                        *x_scale = None;
+                        *x_offset = None;
+                        *y_offset = 0.0;
+                        *drag_time_start = None;
+                        *search_text = String::new();
+                        ui.close_menu();
+                    }
                     #[cfg(not(target_arch = "wasm32"))]
                     if ui.button("Quit").clicked() {
                         ctx.send_viewport_cmd(ViewportCommand::Close);
