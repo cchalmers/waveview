@@ -290,7 +290,7 @@ impl<'a> Wave<'a> {
                     let fill_rect = rect.expand(2.0);
                     if fill_rect.width() < (x - prev_start_x) * scale * 32.0 {
                         // shapes.push(Shape::rect_filled(fill_rect, 2.0, fill_color));
-                        shapes.push(Shape::galley(rect.min, galley));
+                        shapes.push(Shape::galley(rect.min, galley, color));
                     }
                     prev = vs;
                     prev_start_x = x;

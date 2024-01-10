@@ -868,12 +868,12 @@ impl eframe::App for TemplateApp {
                         let galley = ui.fonts(|f| f.layout_no_wrap(str, font, color));
                         // let rect =
                         //     Align2::RIGHT_CENTER.anchor_rect(Rect::from_min_size(p0 - galley.size() - vec2(4.0, 0.0), galley.size()));
-                        ticks.push(Shape::galley(p0 - vec2(4.0 + galley.size().x, 0.0), galley));
+                        ticks.push(Shape::galley(p0 - vec2(4.0 + galley.size().x, 0.0), galley, color));
                     }
                     let galley = ui.fonts(|f| f.layout_no_wrap(used_i.to_string(), font, color));
                     let rect = Align2::LEFT_CENTER
                         .anchor_rect(Rect::from_min_size(p0 + vec2(4.0, 0.0), galley.size()));
-                    ticks.push(Shape::galley(rect.min + vec2(4.0, 0.0), galley));
+                    ticks.push(Shape::galley(rect.min + vec2(4.0, 0.0), galley, color));
                     i += gap;
                 }
                 ui.painter().extend(ticks);
