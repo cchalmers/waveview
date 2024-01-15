@@ -463,9 +463,6 @@ impl eframe::App for TemplateApp {
                     if ui.button("Quit").clicked() {
                         ctx.send_viewport_cmd(ViewportCommand::Close);
                     }
-                    // annoying warning
-                    #[cfg(target_arch = "wasm32")]
-                    let _ = &frame;
                 });
                 ui.menu_button("View", |ui| {
                     ui.add(egui::Slider::new(row_height, 25.0..=128.0).text("height"));
