@@ -44,7 +44,7 @@
 
         waveview = let
           rustPkgs = rustBuilder.makePackageSet {
-            rustVersion = "1.72.0";
+            rustVersion = "1.76.0";
             packageFun = import ./Cargo.nix;
             packageOverrides = pkgs: pkgs.rustBuilder.overrides.all ++ [
 
@@ -61,7 +61,7 @@
         in (rustPkgs.workspace.waveview {}).bin;
 
         waveview-wasm = let
-          rustVersion = "1.72.0";
+          rustVersion = "1.76.0";
           pkgsWasm = import nixpkgs {
             inherit system;
             crossSystem = {
