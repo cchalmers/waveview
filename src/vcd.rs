@@ -38,7 +38,9 @@ impl From<vcd::Value> for Value {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, serde::Serialize, serde::Deserialize,
+)]
 pub enum Value {
     /// Logic low
     ///
@@ -399,7 +401,7 @@ pub fn read_clocked_vcd(
 
     let mut vec_output = vec![];
     for (id, var) in id_map {
-        let mut signal = signal_map.remove(&id).unwrap();
+        let mut signal = signal_map.swap_remove(&id).unwrap();
         if let Some((_, &last_v)) = signal.ix.iter().next_back() {
             signal.ix.insert(time, last_v);
         }

@@ -4,7 +4,7 @@ default-run = "waveview_bin"
 version = "0.1.0"
 authors = ["Christopher Chalmers <c.chalmers@me.com>"]
 edition = "2021"
-rust-version = "1.59"
+rust-version = "1.71"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -16,7 +16,8 @@ path = "src/main.rs"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-eframe = "0.25.0" # Gives us egui, epi and web+native backends
+eframe = "0.28.0" # Gives us egui, epi and web+native backends
+epaint = "0.28.0" # Just the painting code
 ehttp = "*"
 color-eyre = "*"
 vcd = "0.7"
@@ -27,12 +28,12 @@ rfd = "*"
 futures = { version = "*", features = ["executor"] }
 tracing = "*"
 tracing-subscriber = "*"
-clap = { version = "4", features = [ "derive" ] }
+clap = { version = "4.5", features = [ "derive" ] }
 
 serde = { version = "1", features = ["derive"], optional = true }
 
-egui_dnd = "0.5.1"
-egui_plot = "0.23.0"
+egui_dnd = "0.9.0"
+egui_plot = "0.28.0"
 
 [features]
 default = ["persistence"]
@@ -52,8 +53,8 @@ persistence = ["eframe/persistence", "serde"] # Enable if you want to persist ap
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.7"
 tracing-wasm = "0.2"
-wasm-bindgen = "0.2.87"
-wasm-bindgen-futures = "0.4.37"
+wasm-bindgen = "0.2.92"
+wasm-bindgen-futures = "0.4.42"
 js-sys = "0.3"
 [target.'cfg(target_arch = "wasm32")'.dependencies.web-sys]
 version = "*"

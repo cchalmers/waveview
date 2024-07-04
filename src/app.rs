@@ -60,12 +60,25 @@ impl Default for TemplateApp {
                 url: "".to_owned(),
                 open: false,
             },
-            err_window: ErrWindow { msg: String::new(), open: false },
+            err_window: ErrWindow {
+                msg: String::new(),
+                open: false,
+            },
 
             row_height: 32.0,
 
-            side_panel: if cfg!(debug_assertions) { SidePanel::Samples } else { SidePanel::None },
-            info: Info { rect: Rect::NOTHING, min_rect: Rect::NOTHING, max_rect: Rect::NOTHING, viewport: Rect::NOTHING, x_scale: 0.0 },
+            side_panel: if cfg!(debug_assertions) {
+                SidePanel::Samples
+            } else {
+                SidePanel::None
+            },
+            info: Info {
+                rect: Rect::NOTHING,
+                min_rect: Rect::NOTHING,
+                max_rect: Rect::NOTHING,
+                viewport: Rect::NOTHING,
+                x_scale: 0.0,
+            },
 
             search_text: String::new(),
         }
@@ -124,7 +137,7 @@ impl Info {
         }
         ui.separator();
         ui.label(RichText::new("scroll_delta").strong());
-        let scroll_delta = ctx.input(|i| i.scroll_delta);
+        let scroll_delta = ctx.input(|i| i.smooth_scroll_delta);
         let scroll_x = scroll_delta.x;
         let scroll_y = scroll_delta.y;
         ui.monospace(format!("{scroll_x:+03} {scroll_y:+03}"));
@@ -136,7 +149,11 @@ impl Info {
 }
 
 impl TemplateApp {
-    pub fn new(cc: &eframe::CreationContext<'_>, sigs: Vec<(vcd::ScopedVar, vcd::Signal)>, final_time: u64) -> TemplateApp {
+    pub fn new(
+        cc: &eframe::CreationContext<'_>,
+        sigs: Vec<(vcd::ScopedVar, vcd::Signal)>,
+        final_time: u64,
+    ) -> TemplateApp {
         if let Some(storage) = cc.storage {
             if let Some(app) = eframe::get_value(storage, eframe::APP_KEY) {
                 return app;
@@ -571,7 +588,7 @@ impl eframe::App for TemplateApp {
             let viewport =
                 Rect::from_min_size(egui::pos2(8.0, 16.0 - *y_offset), egui::vec2(180.0, 900.0));
 
-            let mut ui = ui.child_ui(viewport, *ui.layout());
+            let mut ui = ui.child_ui(viewport, *ui.layout(), None);
 
             let mut content_clip_rect = max_rect.expand(ui.visuals().clip_rect_margin);
 
@@ -807,7 +824,7 @@ impl eframe::App for TemplateApp {
                     ui.painter().extend(shapes);
                 }
 
-                if wave_resp.drag_released() {
+                if wave_resp.drag_stopped() {
                     *drag_time_start = None;
                 }
 
@@ -865,7 +882,11 @@ impl eframe::App for TemplateApp {
                         let galley = ui.fonts(|f| f.layout_no_wrap(str, font, color));
                         // let rect =
                         //     Align2::RIGHT_CENTER.anchor_rect(Rect::from_min_size(p0 - galley.size() - vec2(4.0, 0.0), galley.size()));
-                        ticks.push(Shape::galley(p0 - vec2(4.0 + galley.size().x, 0.0), galley, color));
+                        ticks.push(Shape::galley(
+                            p0 - vec2(4.0 + galley.size().x, 0.0),
+                            galley,
+                            color,
+                        ));
                     }
                     let galley = ui.fonts(|f| f.layout_no_wrap(used_i.to_string(), font, color));
                     let rect = Align2::LEFT_CENTER

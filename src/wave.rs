@@ -97,10 +97,11 @@ impl<'a> Wave<'a> {
                 stroke: ui.visuals().widgets.noninteractive.bg_stroke,
                 fill_texture_id: Default::default(),
                 uv: rect,
+                blur_width: 0.0,
             });
         }
 
-        let mut wave_ui = ui.child_ui(rect, Layout::default());
+        let mut wave_ui = ui.child_ui(rect, Layout::default(), None);
         wave_ui.set_clip_rect(rect);
         // let mut last_high;
         // let dx = 1.0;

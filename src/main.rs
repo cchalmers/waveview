@@ -37,7 +37,7 @@ fn main() {
             } else {
                 (vec![], 1)
             };
-            Box::new(waveview::TemplateApp::new(cc, signals, time))
+            Ok(Box::new(waveview::TemplateApp::new(cc, signals, time)))
         }),
     )
     .unwrap();
