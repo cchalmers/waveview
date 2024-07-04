@@ -72,7 +72,7 @@ fn main() {
                             });
                         }
                     }
-                    Box::new(app)
+                    Ok(Box::new(app))
                 }),
             )
             .await
