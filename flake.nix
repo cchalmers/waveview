@@ -4,7 +4,8 @@
     # nixpkgs.url = "github:NixOS/nixpkgs/master";
     flake-utils.url = "github:numtide/flake-utils";
 
-    cargo2nix.url = "github:acristoffers/cargo2nix/patch-1";
+    cargo2nix.url = "github:cargo2nix/cargo2nix/release-0.11.0";
+    # cargo2nix.url = "github:acristoffers/cargo2nix/patch-1";
     # https://github.com/acristoffers/cargo2nix/tree/patch-1
     # cargo2nix.url = "github:torhovland/cargo2nix/wasm";
     cargo2nix.inputs.nixpkgs.follows = "nixpkgs";
@@ -40,7 +41,9 @@
         '';
       };
 
-      packages = {
+      packages = rec {
+
+        default = waveview;
 
         waveview = let
           rustPkgs = rustBuilder.makePackageSet {
