@@ -1,107 +1,137 @@
 {
+  description = "Build a cargo project";
+
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-23.05";
-    # nixpkgs.url = "github:NixOS/nixpkgs/master";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+
+    crane = {
+      url = "github:ipetkov/crane";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     flake-utils.url = "github:numtide/flake-utils";
 
-    cargo2nix.url = "github:cargo2nix/cargo2nix/release-0.11.0";
-    # cargo2nix.url = "github:acristoffers/cargo2nix/patch-1";
-    # https://github.com/acristoffers/cargo2nix/tree/patch-1
-    # cargo2nix.url = "github:torhovland/cargo2nix/wasm";
-    cargo2nix.inputs.nixpkgs.follows = "nixpkgs";
-    cargo2nix.inputs.flake-utils.follows = "flake-utils";
-    cargo2nix.inputs.rust-overlay.follows = "rust-overlay";
-
-    gitignore.url = "github:hercules-ci/gitignore.nix";
-    gitignore.inputs.nixpkgs.follows = "nixpkgs";
-
-    rust-overlay.url = "github:oxalica/rust-overlay";
-    rust-overlay.inputs.nixpkgs.follows = "nixpkgs";
-    rust-overlay.inputs.flake-utils.follows = "flake-utils";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+      };
+    };
   };
 
-  outputs = { self, nixpkgs, gitignore, cargo2nix, rust-overlay, flake-utils }:
-   flake-utils.lib.eachDefaultSystem (system:
-    let pkgs = import nixpkgs {
+  outputs = { self, nixpkgs, crane, flake-utils, rust-overlay, ... }:
+    flake-utils.lib.eachDefaultSystem (system:
+      let
+        pkgs = import nixpkgs {
           inherit system;
-          overlays = [ cargo2nix.overlays.default ];
+          overlays = [ (import rust-overlay) ];
         };
-        inherit (gitignore.lib) gitignoreSource;
-    in with pkgs; {
-      devShell = mkShell {
-        buildInputs = [
-          trunk
-          wasm-bindgen-cli
-          libiconv
-          darwin.apple_sdk.frameworks.AppKit
-          cargo2nix.packages.${system}.cargo2nix
-        ];
-        shellHook = ''
-          echo "welcome to the waveview shell"
+
+        inherit (pkgs) lib;
+
+        rustToolchainFor = p: p.rust-bin.stable.latest.default.override {
+          # Set the build targets supported by the toolchain,
+          # wasm32-unknown-unknown is required for trunk
+          targets = [ "wasm32-unknown-unknown" ];
+        };
+        craneLib = ((crane.mkLib pkgs).overrideToolchain rustToolchainFor).overrideScope (_final: _prev: {
+        });
+
+        # When filtering sources, we want to allow assets other than .rs files
+        src = lib.cleanSourceWith {
+          src = ./.; # The original, unfiltered source
+          filter = path: type:
+            (lib.hasSuffix "\.html" path) ||
+            (lib.hasSuffix "\.scss" path) ||
+            # Example of a folder for images, icons, etc
+            (lib.hasInfix "/assets/" path) ||
+            # Default filter from crane (allow .rs files)
+            (craneLib.filterCargoSources path type)
+          ;
+        };
+
+        # Common arguments can be set here to avoid repeating them later
+        commonArgs = {
+          inherit src;
+          strictDeps = true;
+          # We must force the target, otherwise cargo will attempt to use your native target
+          CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
+
+          buildInputs = [
+            # Add additional build inputs here
+          ] ++ lib.optionals pkgs.stdenv.isDarwin [
+            # Additional darwin specific inputs can be set here
+            pkgs.libiconv
+          ];
+        };
+
+        # Build *just* the cargo dependencies, so we can reuse
+        # all of that work (e.g. via cachix) when running in CI
+        cargoArtifacts = craneLib.buildDepsOnly (commonArgs // {
+          # You cannot run cargo test on a wasm build
+          doCheck = false;
+        });
+
+        # Build the actual crate itself, reusing the dependency
+        # artifacts from above.
+        # This derivation is a directory you can put on a webserver.
+        my-app = craneLib.buildTrunkPackage (commonArgs // {
+          inherit cargoArtifacts;
+
+          # The version of wasm-bindgen-cli here must match the one from Cargo.lock.
+          wasm-bindgen-cli = pkgs.wasm-bindgen-cli.override {
+            version = "0.2.92";
+            hash = "sha256-1VwY8vQy7soKEgbki4LD+v259751kKxSxmo/gqE6yV0=";
+            cargoHash = "sha256-aACJ+lYNEU8FFBs158G1/JG8sc6Rq080PeKCMnwdpH0=";
+          };
+        });
+
+        # Quick example on how to serve the app,
+        # This is just an example, not useful for production environments
+        serve-app = pkgs.writeShellScriptBin "serve-app" ''
+          ${pkgs.python3Minimal}/bin/python3 -m http.server --directory ${my-app} 8000
         '';
-      };
+      in
+      {
+        checks = {
+          # Build the crate as part of `nix flake check` for convenience
+          inherit my-app;
 
-      packages = rec {
+          # Run clippy (and deny all warnings) on the crate source,
+          # again, reusing the dependency artifacts from above.
+          #
+          # Note that this is done as a separate derivation so that
+          # we can block the CI if there are issues here, but not
+          # prevent downstream consumers from building our crate by itself.
+          my-app-clippy = craneLib.cargoClippy (commonArgs // {
+            inherit cargoArtifacts;
+            cargoClippyExtraArgs = "--all-targets -- --deny warnings";
+          });
 
-        default = waveview;
-
-        waveview = let
-          rustPkgs = rustBuilder.makePackageSet {
-            rustVersion = "1.76.0";
-            packageFun = import ./Cargo.nix;
-            packageOverrides = pkgs: pkgs.rustBuilder.overrides.all ++ [
-
-                (pkgs.rustBuilder.rustLib.makeOverride {
-                    name = "waveview";
-                    overrideAttrs = drv: {
-                      buildInputs = drv.buildInputs or [ ] ++ [
-                        darwin.apple_sdk.frameworks.AppKit
-                      ];
-                    };
-                })
-            ];
+          # Check formatting
+          my-app-fmt = craneLib.cargoFmt {
+            inherit src;
           };
-        in (rustPkgs.workspace.waveview {}).bin;
+        };
 
-        waveview-wasm = let
-          rustVersion = "1.76.0";
-          pkgsWasm = import nixpkgs {
-            inherit system;
-            crossSystem = {
-              config = "wasm32-unknown-wasi-unknown";
-              system = "wasm32-wasi";
-              useLLVM = true;
-            };
-            overlays = [cargo2nix.overlays.default];
-          };
+        packages.default = my-app;
 
-          rustWithWasmTarget = pkgs.rust-bin.stable.${rustVersion}.default.override {
-            targets = [ wasmTarget ];
-          };
+        apps.default = flake-utils.lib.mkApp {
+          drv = serve-app;
+        };
 
-          rustPkgs = pkgs.rustBuilder.makePackageSet {
-            inherit rustVersion;
-            packageFun = import ./Cargo.nix;
-          };
+        devShells.default = craneLib.devShell {
+          # Inherit inputs from checks.
+          checks = self.checks.${system};
 
-          rustPkgsWasm = pkgsWasm.rustBuilder.makePackageSet {
-            inherit rustVersion;
-            target = "wasm32-unknown-unknown";
+          # Additional dev-shell environment variables can be set directly
+          # MY_CUSTOM_DEVELOPMENT_VAR = "something else";
 
-            # cargo2nix thinks we're building for wasm32-unknown-wasi now.
-            # We need to guide it to wasm32-unknown-unknown instead.
-            # packageFun = import ./Cargo.nix;
-            packageFun = attrs: import ./Cargo.nix (attrs // {
-              hostPlatform = attrs.hostPlatform // {
-                parsed = attrs.hostPlatform.parsed // {
-                  kernel.name = "unknown";
-                };
-              };
-            });
-          };
-
-        in (rustPkgsWasm.workspace.waveview {}).bin;
-
-      };
-  });
+          # Extra inputs can be added here; cargo and rustc are provided by default.
+          packages = with pkgs; [
+            trunk
+            bacon
+          ];
+        };
+      });
 }
