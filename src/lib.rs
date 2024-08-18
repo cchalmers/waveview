@@ -7,6 +7,7 @@ pub mod vcd;
 mod wave;
 pub use app::TemplateApp;
 pub mod samples;
+pub mod timeline;
 
 #[cfg(target_arch = "wasm32")]
 mod ws_wasm;

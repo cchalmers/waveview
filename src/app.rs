@@ -1,5 +1,6 @@
 use crate::vcd;
 use crate::wave;
+use crate::timeline;
 use eframe::egui;
 use eframe::egui::NumExt;
 use egui::*;
@@ -37,6 +38,7 @@ pub struct TemplateApp {
     side_panel: SidePanel,
     info: Info,
     search_text: String,
+    timeline: timeline::Timeline,
 }
 
 impl Default for TemplateApp {
@@ -81,6 +83,11 @@ impl Default for TemplateApp {
             },
 
             search_text: String::new(),
+            timeline: {
+                let mut t = timeline::Timeline::default();
+                t.first = true;
+                t
+            },
         }
     }
 }
@@ -201,6 +208,11 @@ impl TemplateApp {
             info: Info { rect: Rect::NOTHING, min_rect: Rect::NOTHING, max_rect: Rect::NOTHING, viewport: Rect::NOTHING, x_scale: 0.0 },
 
             search_text: String::new(),
+            timeline: {
+                let mut t = timeline::Timeline::default();
+                t.first = true;
+                t
+            },
         }
     }
 }
@@ -360,6 +372,7 @@ impl eframe::App for TemplateApp {
             side_panel,
             info,
             search_text,
+            timeline,
         } = self;
 
         {
@@ -569,334 +582,338 @@ impl eframe::App for TemplateApp {
 
         let mut dragging = false;
 
-        egui::SidePanel::left("side_panel").show(ctx, |ui| {
-            ui.set_width(180.0);
-            let max_rect = ui.max_rect();
+        // egui::SidePanel::left("side_panel").show(ctx, |ui| {
+        //     ui.set_width(180.0);
+        //     let max_rect = ui.max_rect();
 
-            ui.horizontal(|ui| {
-                // TODO adjust scroll offset so you don't move when changing height
-                ui.label("🔎");
-                let _resp = ui.text_edit_singleline(search_text);
-            });
-            // ui.separator();
+        //     ui.horizontal(|ui| {
+        //         // TODO adjust scroll offset so you don't move when changing height
+        //         ui.label("🔎");
+        //         let _resp = ui.text_edit_singleline(search_text);
+        //     });
+        //     // ui.separator();
 
-            let spacing = ui.spacing().item_spacing;
-            let row_height_with_spacing = *row_height + spacing.y;
+        //     let spacing = ui.spacing().item_spacing;
+        //     let row_height_with_spacing = *row_height + spacing.y;
 
-            use egui::*;
+        //     use egui::*;
 
-            let viewport =
-                Rect::from_min_size(egui::pos2(8.0, 16.0 - *y_offset), egui::vec2(180.0, 900.0));
+        //     let viewport =
+        //         Rect::from_min_size(egui::pos2(8.0, 16.0 - *y_offset), egui::vec2(180.0, 900.0));
 
-            let mut ui = ui.child_ui(viewport, *ui.layout(), None);
+        //     let mut ui = ui.child_ui(viewport, *ui.layout(), None);
 
-            let mut content_clip_rect = max_rect.expand(ui.visuals().clip_rect_margin);
+        //     let mut content_clip_rect = max_rect.expand(ui.visuals().clip_rect_margin);
 
-            // add clipping for the "timeline" bar
-            content_clip_rect.min.y += 25.0;
-            // add clipping for the separator
-            // content_clip_rect.min.y += 2.0;
-            ui.set_clip_rect(content_clip_rect);
-            let num_rows = wave_data.len();
-            ui.set_height((row_height_with_spacing * num_rows as f32 - spacing.y).at_least(0.0));
-            // let min_row = (viewport.min.y / row_height_with_spacing);
-            let min_row = (*y_offset / row_height_with_spacing).floor().at_least(0.0) as usize;
-            // let max_row = (viewport.max.y / row_height_with_spacing).ceil() as usize + 1;
-            let max_row =
-                ((*y_offset + max_rect.size().y) / row_height_with_spacing).ceil() as usize + 1;
-            let max_row = max_row.at_most(num_rows);
+        //     // add clipping for the "timeline" bar
+        //     content_clip_rect.min.y += 25.0;
+        //     // add clipping for the separator
+        //     // content_clip_rect.min.y += 2.0;
+        //     ui.set_clip_rect(content_clip_rect);
+        //     let num_rows = wave_data.len();
+        //     ui.set_height((row_height_with_spacing * num_rows as f32 - spacing.y).at_least(0.0));
+        //     // let min_row = (viewport.min.y / row_height_with_spacing);
+        //     let min_row = (*y_offset / row_height_with_spacing).floor().at_least(0.0) as usize;
+        //     // let max_row = (viewport.max.y / row_height_with_spacing).ceil() as usize + 1;
+        //     let max_row =
+        //         ((*y_offset + max_rect.size().y) / row_height_with_spacing).ceil() as usize + 1;
+        //     let max_row = max_row.at_most(num_rows);
 
-            ui.set_height((row_height_with_spacing * num_rows as f32 + spacing.y).at_least(0.0));
-            let max_row = max_row.at_most(num_rows);
+        //     ui.set_height((row_height_with_spacing * num_rows as f32 + spacing.y).at_least(0.0));
+        //     let max_row = max_row.at_most(num_rows);
 
-            // let y_min = ui.max_rect().top() + min_row as f32 * row_height_with_spacing;
-            // let y_max = ui.max_rect().top() + max_row as f32 * row_height_with_spacing;
+        //     // let y_min = ui.max_rect().top() + min_row as f32 * row_height_with_spacing;
+        //     // let y_max = ui.max_rect().top() + max_row as f32 * row_height_with_spacing;
 
-            // let rect = egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), y_min..=y_max);
+        //     // let rect = egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), y_min..=y_max);
 
-            use egui_dnd::DragDropItem;
+        //     use egui_dnd::DragDropItem;
 
-            // TODO fix this changing x scroll in main window
-            egui_dnd::dnd(&mut ui, "dnd").show_custom_vec(wave_data, |ui, wave_data, iter| {
-                // 32 looks better with default layout but 25 looks better with top_down/centered
-                // ui.horizontal(|ui| ui.set_height(32.0 + row_height_with_spacing * min_row as f32));
-                ui.horizontal(|ui| ui.set_height(25.0 + row_height_with_spacing * min_row as f32));
-                for (i, d) in wave_data
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, d)| d.0.contains(&*search_text))
-                    .take(max_row)
-                    .skip(min_row)
-                {
-                    iter.next(ui, d.id(), i, true, |ui, item_handle| {
-                        item_handle.ui(ui, |ui, handle, state| {
-                            dragging |= state.dragged;
-                            ui.horizontal(|ui| {
-                                ui.set_height(*row_height);
-                                handle.ui(ui, |ui| {
-                                    ui.with_layout(Layout::top_down(egui::Align::Max), |ui| {
-                                        ui.horizontal_centered(|ui| {
-                                            ui.label(&d.0);
-                                        });
-                                    });
-                                });
-                            });
-                        })
-                    });
-                }
-            });
-        });
+        //     // TODO fix this changing x scroll in main window
+        //     egui_dnd::dnd(&mut ui, "dnd").show_custom_vec(wave_data, |ui, wave_data, iter| {
+        //         // 32 looks better with default layout but 25 looks better with top_down/centered
+        //         // ui.horizontal(|ui| ui.set_height(32.0 + row_height_with_spacing * min_row as f32));
+        //         ui.horizontal(|ui| ui.set_height(25.0 + row_height_with_spacing * min_row as f32));
+        //         for (i, d) in wave_data
+        //             .iter()
+        //             .enumerate()
+        //             .filter(|(_, d)| d.0.contains(&*search_text))
+        //             .take(max_row)
+        //             .skip(min_row)
+        //         {
+        //             iter.next(ui, d.id(), i, true, |ui, item_handle| {
+        //                 item_handle.ui(ui, |ui, handle, state| {
+        //                     dragging |= state.dragged;
+        //                     ui.horizontal(|ui| {
+        //                         ui.set_height(*row_height);
+        //                         handle.ui(ui, |ui| {
+        //                             ui.with_layout(Layout::top_down(egui::Align::Max), |ui| {
+        //                                 ui.horizontal_centered(|ui| {
+        //                                     ui.label(&d.0);
+        //                                 });
+        //                             });
+        //                         });
+        //                     });
+        //                 })
+        //             });
+        //         }
+        //     });
+        // });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            // The central panel the region left after adding TopPanel's and SidePanel's
-            // ui.heading("eframe template");
-
-            // let clip_rect = ui.clip_rect();
-            let min_rect = ui.min_rect();
-            let max_rect = ui.max_rect();
-
-            let scroll_area = egui::ScrollArea::both().auto_shrink([false; 2]);
-
-            let scroll_area = if let Some(offset) = x_offset {
-                scroll_area.horizontal_scroll_offset(*offset)
-            } else {
-                scroll_area
-            };
-
-            let filtered = wave_data
-                .iter()
-                .filter(|(name, _)| name.contains(&*search_text))
-                .collect::<Vec<_>>();
-
-            let num_rows = filtered.len();
-
-            // let row_height_sans_spacing = 32.0;
-            let spacing = ui.spacing().item_spacing;
-            let row_height_with_spacing = *row_height + spacing.y;
-
-            scroll_area.show_viewport(ui, |ui, viewport| {
-                // this is kinda nasty because you end up with a 1 frame lag between the waves and
-                // the labels. Maybe having 2 separate scroll areas would one? One hoirzontal only
-                // for the wave and a vertical only for waves and labels? I feel like I tried this
-                // and it didn't work out properly.
-                *y_offset = viewport.min.y;
-                *main_viewport = viewport;
-                ui.set_height(
-                    (row_height_with_spacing * num_rows as f32 - spacing.y).at_least(0.0),
-                );
-                let min_row = (viewport.min.y / row_height_with_spacing)
-                    .floor()
-                    .at_least(0.0) as usize;
-                let max_row = (viewport.max.y / row_height_with_spacing).ceil() as usize + 1;
-                let max_row = max_row.at_most(num_rows);
-
-                let y_min = ui.max_rect().top() + min_row as f32 * row_height_with_spacing;
-                let y_max = ui.max_rect().top() + max_row as f32 * row_height_with_spacing;
-
-                let rect =
-                    egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), y_min + 16.0..=y_max);
-
-                // hackily make initial scale to fit everything (0.95 to handle scroll bar (major
-                // hack))
-                if x_scale.is_none() {
-                    *x_scale = Some(
-                        0.95 * (viewport.max.x - viewport.min.x) / (*final_time as f32 * 32.0),
-                    );
-                }
-                let x_scale = x_scale.as_mut().unwrap();
-
-                info.rect = rect;
-                info.min_rect = min_rect;
-                info.max_rect = max_rect;
-                info.viewport = viewport;
-                info.x_scale = *x_scale;
-
-                let wave_resp = ui
-                    .allocate_ui_at_rect(rect, |ui| {
-                        let mut clip_rect = ui.clip_rect();
-                        clip_rect.min.y += 16.0;
-                        ui.set_clip_rect(clip_rect);
-                        ui.skip_ahead_auto_ids(min_row); // Make sure we get consistent IDs.
-                                                         // let the_x_offset = x_offset.unwrap_or(0.0);
-                        let resp = ui.interact(
-                            max_rect,
-                            egui::Id::new("ui_hover"),
-                            // if I change this to hover, I can click and drag to move waves around
-                            egui::Sense::click_and_drag(),
-                            // egui::Sense::hover(),
-                            // egui::Sense::
-                        );
-                        let hover_pos = resp.hover_pos();
-
-                        let x_frac = hover_pos
-                            .map(|hover_pos| (hover_pos.x - min_rect.min.x) / min_rect.width());
-                        // let x_val = x_frac.map(|x_frac| {
-                        //     (viewport.min.x + x_frac * (viewport.max.x - viewport.min.x))
-                        //         / 32.0
-                        //         / *x_scale
-                        // });
-                        ui.vertical(|ui| {
-                            for d in filtered.iter().take(max_row).skip(min_row) {
-                                let mut wave = wave::Wave::new(
-                                    &d.0,
-                                    *x_scale,
-                                    viewport.min.x..=viewport.max.x,
-                                    &d.1,
-                                );
-                                wave.height = *row_height;
-                                wave.ui(ui);
-                            }
-                        });
-
-                        let view_width = viewport.max.x - viewport.min.x;
-
-                        // do the actual zoom on the next frame where we know the scroll position that
-                        // will be needed
-                        if ui.rect_contains_pointer(egui::Rect::EVERYTHING) {
-                            let zoom = ui.input(|i| i.zoom_delta());
-                            if zoom != 1.0 {
-                                *x_scale *= zoom;
-                                if *x_scale < 0.001 {
-                                    *x_scale = 0.001;
-                                } else if *x_scale > 100.0 {
-                                    *x_scale = 100.0;
-                                } else if let Some(x_frac) = x_frac {
-                                    let offset =
-                                        zoom * viewport.min.x + (zoom - 1.0) * x_frac * view_width;
-                                    // the scoll area doesn't like it a negative offset or a
-                                    // positive offset when there's nothing to scroll
-                                    if offset < 0.0
-                                        || (*final_time as f32) * *x_scale * 32.0 < view_width
-                                    {
-                                        *x_offset = Some(0.0);
-                                    } else {
-                                        *x_offset = Some(offset);
-                                    }
-                                }
-                            } else {
-                                // only set the offset correction when we're zooming, otherwise the
-                                // scroller deal with the position
-                                *x_offset = None;
-                            }
-                        }
-                        resp
-                    })
-                    .inner;
-
-                let yellow = egui::Color32::from_rgb(0xd2, 0x99, 0x1d);
-
-                let mut hover_t = None;
-                if let Some(pos) = &wave_resp.hover_pos() {
-                    use egui::*;
-                    let mut shapes = vec![];
-                    // let color = Color32::from_additive_luminance(196);
-
-                    let x = pos.x;
-                    let t = (x - rect.min.x) / 32.0 / *x_scale;
-                    let t_rounded = t.round();
-                    hover_t = Some(t_rounded as usize);
-
-                    if wave_resp.drag_started() {
-                        *drag_time_start = hover_t;
-                    }
-
-                    let rounded_x = rect.min.x + t_rounded * *x_scale * 32.0;
-                    let p0 = pos2(rounded_x, max_rect.min.y + 0.0);
-                    let p1 = pos2(rounded_x, max_rect.max.y);
-                    let stroke = Stroke::new(2.0, yellow);
-                    shapes.push(Shape::line_segment([p0, p1], stroke));
-
-                    if let Some(start_t) = *drag_time_start {
-                        let rounded_x = rect.min.x + (start_t as f32) * *x_scale * 32.0;
-                        let sp0 = pos2(rounded_x, max_rect.min.y + 0.0);
-                        let sp1 = pos2(rounded_x, max_rect.max.y);
-                        let stroke = Stroke::new(2.0, yellow);
-                        shapes.push(Shape::line_segment([sp0, sp1], stroke));
-                        // this is looks like it works when we're scrolled to the top, overwise
-                        // it's below by a few pixels
-                        let pp0 = pos2(rounded_x, max_rect.min.y + 16.0);
-                        shapes.push(Shape::rect_filled(
-                            egui::Rect::from_two_pos(pp0, p1),
-                            egui::Rounding::ZERO,
-                            yellow.linear_multiply(0.1),
-                        ));
-                    }
-                    ui.painter().extend(shapes);
-                }
-
-                if wave_resp.drag_stopped() {
-                    *drag_time_start = None;
-                }
-
-                let rect = egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), y_min..=16.0);
-                let x_min = (main_viewport.min.x / 32.0 / *x_scale).floor() as usize;
-                let x_max = (main_viewport.max.x / 32.0 / *x_scale).ceil() as usize;
-                let mut ticks = vec![];
-                let stroke = egui::Stroke::new(2.0, yellow);
-                let num_ticks = std::cmp::max(1, (main_viewport.width() / 64.0).floor() as usize);
-                let gap = std::cmp::max(
-                    1,
-                    (main_viewport.width() / 32.0 / *x_scale / num_ticks as f32).round() as usize,
-                );
-                // render the previous tick because part of it is still visible
-                let mut i = (std::cmp::max(1, x_min) - 1) / gap * gap;
-                while i <= x_max {
-                    // in x_min..=x_max {
-                    let mut used_i = i;
-                    let mut highlight = false;
-                    let mut diff: Option<isize> = None;
-                    if let Some(t) = hover_t {
-                        // kinda ugly since we'll render twice if midway
-                        if i.abs_diff(t) <= gap / 2 {
-                            used_i = t;
-                            highlight = true;
-                            if let Some(st) = *drag_time_start {
-                                diff = Some((t as isize) - (st as isize))
-                            }
-                        }
-                    }
-                    if let Some(t) = *drag_time_start {
-                        if i.abs_diff(t) <= gap / 2 {
-                            used_i = t;
-                            highlight = true;
-                        }
-                    }
-                    let p0 = egui::pos2(
-                        rect.min.x + *x_scale * 32.0 * used_i as f32,
-                        max_rect.min.y + 4.0,
-                    );
-                    let p1 = egui::pos2(
-                        rect.min.x + *x_scale * 32.0 * used_i as f32,
-                        max_rect.min.y + 10.0,
-                    );
-                    ticks.push(egui::Shape::line_segment([p0, p1], stroke));
-
-                    use egui::*;
-                    let font_size = if highlight { 13.0 } else { 11.0 };
-                    let font = epaint::text::FontId::new(font_size, text::FontFamily::Monospace);
-                    let color = ui.style().visuals.text_color();
-
-                    if let Some(diff) = diff {
-                        let str = format!("{}{diff}", if diff < 0 { "" } else { "+" });
-                        let font = epaint::text::FontId::new(10.0, text::FontFamily::Monospace);
-                        let galley = ui.fonts(|f| f.layout_no_wrap(str, font, color));
-                        // let rect =
-                        //     Align2::RIGHT_CENTER.anchor_rect(Rect::from_min_size(p0 - galley.size() - vec2(4.0, 0.0), galley.size()));
-                        ticks.push(Shape::galley(
-                            p0 - vec2(4.0 + galley.size().x, 0.0),
-                            galley,
-                            color,
-                        ));
-                    }
-                    let galley = ui.fonts(|f| f.layout_no_wrap(used_i.to_string(), font, color));
-                    let rect = Align2::LEFT_CENTER
-                        .anchor_rect(Rect::from_min_size(p0 + vec2(4.0, 0.0), galley.size()));
-                    ticks.push(Shape::galley(rect.min + vec2(4.0, 0.0), galley, color));
-                    i += gap;
-                }
-                ui.painter().extend(ticks);
-            });
+            timeline.draw(ctx, ui);
         });
+
+        // egui::CentralPanel::default().show(ctx, |ui| {
+        //     // The central panel the region left after adding TopPanel's and SidePanel's
+        //     // ui.heading("eframe template");
+
+        //     // let clip_rect = ui.clip_rect();
+        //     let min_rect = ui.min_rect();
+        //     let max_rect = ui.max_rect();
+
+        //     let scroll_area = egui::ScrollArea::both().auto_shrink([false; 2]);
+
+        //     let scroll_area = if let Some(offset) = x_offset {
+        //         scroll_area.horizontal_scroll_offset(*offset)
+        //     } else {
+        //         scroll_area
+        //     };
+
+        //     let filtered = wave_data
+        //         .iter()
+        //         .filter(|(name, _)| name.contains(&*search_text))
+        //         .collect::<Vec<_>>();
+
+        //     let num_rows = filtered.len();
+
+        //     // let row_height_sans_spacing = 32.0;
+        //     let spacing = ui.spacing().item_spacing;
+        //     let row_height_with_spacing = *row_height + spacing.y;
+
+        //     scroll_area.show_viewport(ui, |ui, viewport| {
+        //         // this is kinda nasty because you end up with a 1 frame lag between the waves and
+        //         // the labels. Maybe having 2 separate scroll areas would one? One hoirzontal only
+        //         // for the wave and a vertical only for waves and labels? I feel like I tried this
+        //         // and it didn't work out properly.
+        //         *y_offset = viewport.min.y;
+        //         *main_viewport = viewport;
+        //         ui.set_height(
+        //             (row_height_with_spacing * num_rows as f32 - spacing.y).at_least(0.0),
+        //         );
+        //         let min_row = (viewport.min.y / row_height_with_spacing)
+        //             .floor()
+        //             .at_least(0.0) as usize;
+        //         let max_row = (viewport.max.y / row_height_with_spacing).ceil() as usize + 1;
+        //         let max_row = max_row.at_most(num_rows);
+
+        //         let y_min = ui.max_rect().top() + min_row as f32 * row_height_with_spacing;
+        //         let y_max = ui.max_rect().top() + max_row as f32 * row_height_with_spacing;
+
+        //         let rect =
+        //             egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), y_min + 16.0..=y_max);
+
+        //         // hackily make initial scale to fit everything (0.95 to handle scroll bar (major
+        //         // hack))
+        //         if x_scale.is_none() {
+        //             *x_scale = Some(
+        //                 0.95 * (viewport.max.x - viewport.min.x) / (*final_time as f32 * 32.0),
+        //             );
+        //         }
+        //         let x_scale = x_scale.as_mut().unwrap();
+
+        //         info.rect = rect;
+        //         info.min_rect = min_rect;
+        //         info.max_rect = max_rect;
+        //         info.viewport = viewport;
+        //         info.x_scale = *x_scale;
+
+        //         let wave_resp = ui
+        //             .allocate_ui_at_rect(rect, |ui| {
+        //                 let mut clip_rect = ui.clip_rect();
+        //                 clip_rect.min.y += 16.0;
+        //                 ui.set_clip_rect(clip_rect);
+        //                 ui.skip_ahead_auto_ids(min_row); // Make sure we get consistent IDs.
+        //                                                  // let the_x_offset = x_offset.unwrap_or(0.0);
+        //                 let resp = ui.interact(
+        //                     max_rect,
+        //                     egui::Id::new("ui_hover"),
+        //                     // if I change this to hover, I can click and drag to move waves around
+        //                     egui::Sense::click_and_drag(),
+        //                     // egui::Sense::hover(),
+        //                     // egui::Sense::
+        //                 );
+        //                 let hover_pos = resp.hover_pos();
+
+        //                 let x_frac = hover_pos
+        //                     .map(|hover_pos| (hover_pos.x - min_rect.min.x) / min_rect.width());
+        //                 // let x_val = x_frac.map(|x_frac| {
+        //                 //     (viewport.min.x + x_frac * (viewport.max.x - viewport.min.x))
+        //                 //         / 32.0
+        //                 //         / *x_scale
+        //                 // });
+        //                 ui.vertical(|ui| {
+        //                     for d in filtered.iter().take(max_row).skip(min_row) {
+        //                         let mut wave = wave::Wave::new(
+        //                             &d.0,
+        //                             *x_scale,
+        //                             viewport.min.x..=viewport.max.x,
+        //                             &d.1,
+        //                         );
+        //                         wave.height = *row_height;
+        //                         wave.ui(ui);
+        //                     }
+        //                 });
+
+        //                 let view_width = viewport.max.x - viewport.min.x;
+
+        //                 // do the actual zoom on the next frame where we know the scroll position that
+        //                 // will be needed
+        //                 if ui.rect_contains_pointer(egui::Rect::EVERYTHING) {
+        //                     let zoom = ui.input(|i| i.zoom_delta());
+        //                     if zoom != 1.0 {
+        //                         *x_scale *= zoom;
+        //                         if *x_scale < 0.001 {
+        //                             *x_scale = 0.001;
+        //                         } else if *x_scale > 100.0 {
+        //                             *x_scale = 100.0;
+        //                         } else if let Some(x_frac) = x_frac {
+        //                             let offset =
+        //                                 zoom * viewport.min.x + (zoom - 1.0) * x_frac * view_width;
+        //                             // the scoll area doesn't like it a negative offset or a
+        //                             // positive offset when there's nothing to scroll
+        //                             if offset < 0.0
+        //                                 || (*final_time as f32) * *x_scale * 32.0 < view_width
+        //                             {
+        //                                 *x_offset = Some(0.0);
+        //                             } else {
+        //                                 *x_offset = Some(offset);
+        //                             }
+        //                         }
+        //                     } else {
+        //                         // only set the offset correction when we're zooming, otherwise the
+        //                         // scroller deal with the position
+        //                         *x_offset = None;
+        //                     }
+        //                 }
+        //                 resp
+        //             })
+        //             .inner;
+
+        //         let yellow = egui::Color32::from_rgb(0xd2, 0x99, 0x1d);
+
+        //         let mut hover_t = None;
+        //         if let Some(pos) = &wave_resp.hover_pos() {
+        //             use egui::*;
+        //             let mut shapes = vec![];
+        //             // let color = Color32::from_additive_luminance(196);
+
+        //             let x = pos.x;
+        //             let t = (x - rect.min.x) / 32.0 / *x_scale;
+        //             let t_rounded = t.round();
+        //             hover_t = Some(t_rounded as usize);
+
+        //             if wave_resp.drag_started() {
+        //                 *drag_time_start = hover_t;
+        //             }
+
+        //             let rounded_x = rect.min.x + t_rounded * *x_scale * 32.0;
+        //             let p0 = pos2(rounded_x, max_rect.min.y + 0.0);
+        //             let p1 = pos2(rounded_x, max_rect.max.y);
+        //             let stroke = Stroke::new(2.0, yellow);
+        //             shapes.push(Shape::line_segment([p0, p1], stroke));
+
+        //             if let Some(start_t) = *drag_time_start {
+        //                 let rounded_x = rect.min.x + (start_t as f32) * *x_scale * 32.0;
+        //                 let sp0 = pos2(rounded_x, max_rect.min.y + 0.0);
+        //                 let sp1 = pos2(rounded_x, max_rect.max.y);
+        //                 let stroke = Stroke::new(2.0, yellow);
+        //                 shapes.push(Shape::line_segment([sp0, sp1], stroke));
+        //                 // this is looks like it works when we're scrolled to the top, overwise
+        //                 // it's below by a few pixels
+        //                 let pp0 = pos2(rounded_x, max_rect.min.y + 16.0);
+        //                 shapes.push(Shape::rect_filled(
+        //                     egui::Rect::from_two_pos(pp0, p1),
+        //                     egui::Rounding::ZERO,
+        //                     yellow.linear_multiply(0.1),
+        //                 ));
+        //             }
+        //             ui.painter().extend(shapes);
+        //         }
+
+        //         if wave_resp.drag_stopped() {
+        //             *drag_time_start = None;
+        //         }
+
+        //         let rect = egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), y_min..=16.0);
+        //         let x_min = (main_viewport.min.x / 32.0 / *x_scale).floor() as usize;
+        //         let x_max = (main_viewport.max.x / 32.0 / *x_scale).ceil() as usize;
+        //         let mut ticks = vec![];
+        //         let stroke = egui::Stroke::new(2.0, yellow);
+        //         let num_ticks = std::cmp::max(1, (main_viewport.width() / 64.0).floor() as usize);
+        //         let gap = std::cmp::max(
+        //             1,
+        //             (main_viewport.width() / 32.0 / *x_scale / num_ticks as f32).round() as usize,
+        //         );
+        //         // render the previous tick because part of it is still visible
+        //         let mut i = (std::cmp::max(1, x_min) - 1) / gap * gap;
+        //         while i <= x_max {
+        //             // in x_min..=x_max {
+        //             let mut used_i = i;
+        //             let mut highlight = false;
+        //             let mut diff: Option<isize> = None;
+        //             if let Some(t) = hover_t {
+        //                 // kinda ugly since we'll render twice if midway
+        //                 if i.abs_diff(t) <= gap / 2 {
+        //                     used_i = t;
+        //                     highlight = true;
+        //                     if let Some(st) = *drag_time_start {
+        //                         diff = Some((t as isize) - (st as isize))
+        //                     }
+        //                 }
+        //             }
+        //             if let Some(t) = *drag_time_start {
+        //                 if i.abs_diff(t) <= gap / 2 {
+        //                     used_i = t;
+        //                     highlight = true;
+        //                 }
+        //             }
+        //             let p0 = egui::pos2(
+        //                 rect.min.x + *x_scale * 32.0 * used_i as f32,
+        //                 max_rect.min.y + 4.0,
+        //             );
+        //             let p1 = egui::pos2(
+        //                 rect.min.x + *x_scale * 32.0 * used_i as f32,
+        //                 max_rect.min.y + 10.0,
+        //             );
+        //             ticks.push(egui::Shape::line_segment([p0, p1], stroke));
+
+        //             use egui::*;
+        //             let font_size = if highlight { 13.0 } else { 11.0 };
+        //             let font = epaint::text::FontId::new(font_size, text::FontFamily::Monospace);
+        //             let color = ui.style().visuals.text_color();
+
+        //             if let Some(diff) = diff {
+        //                 let str = format!("{}{diff}", if diff < 0 { "" } else { "+" });
+        //                 let font = epaint::text::FontId::new(10.0, text::FontFamily::Monospace);
+        //                 let galley = ui.fonts(|f| f.layout_no_wrap(str, font, color));
+        //                 // let rect =
+        //                 //     Align2::RIGHT_CENTER.anchor_rect(Rect::from_min_size(p0 - galley.size() - vec2(4.0, 0.0), galley.size()));
+        //                 ticks.push(Shape::galley(
+        //                     p0 - vec2(4.0 + galley.size().x, 0.0),
+        //                     galley,
+        //                     color,
+        //                 ));
+        //             }
+        //             let galley = ui.fonts(|f| f.layout_no_wrap(used_i.to_string(), font, color));
+        //             let rect = Align2::LEFT_CENTER
+        //                 .anchor_rect(Rect::from_min_size(p0 + vec2(4.0, 0.0), galley.size()));
+        //             ticks.push(Shape::galley(rect.min + vec2(4.0, 0.0), galley, color));
+        //             i += gap;
+        //         }
+        //         ui.painter().extend(ticks);
+        //     });
+        // });
 
         url_window.show(ctx, download);
         err_window.show(ctx);
