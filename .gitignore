@@ -1,1 +1,7 @@
 /target
+/dist
+/result
+/result-bin
+*.vcd
+!/vcds/README.md
+.DS_Store

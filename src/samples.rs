@@ -171,7 +171,7 @@ pub fn show_samples(ui: &mut Ui) -> Option<String> {
     // samples.sort();
     let mut chosen_sample = None;
     for sample in SAMPLES {
-        let name = sample.split('/').last().unwrap();
+        let name = sample.split('/').next_back().unwrap();
         if ui.button(name).clicked() {
             chosen_sample = Some(sample);
         }

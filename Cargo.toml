@@ -1,39 +1,45 @@
 [package]
 name = "waveview"
-default-run = "waveview"
+default-run = "waveview_bin"
 version = "0.1.0"
 authors = ["Christopher Chalmers <c.chalmers@me.com>"]
 edition = "2021"
-rust-version = "1.71"
+rust-version = "1.92"
+
+[workspace]
+members = ["waveserve"]
+default-members = ["."]
+resolver = "2"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [[bin]]
-name = "waveview"
+name = "waveview_bin"
 path = "src/main.rs"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-eframe = "0.28.0" # Gives us egui, epi and web+native backends
-epaint = "0.28.0" # Just the painting code
-ehttp = "*"
-color-eyre = "*"
+eframe = "0.35.0"
+epaint = "0.35.0"
+ehttp = "0.6.0"
+ewebsock = { version = "0.8.0", features = ["tls"] }
+color-eyre = "0.6.5"
 vcd = "0.7"
-itertools = "*"
-indexmap = "*"
-log = "*"
-rfd = "*"
-futures = { version = "*", features = ["executor"] }
-tracing = "*"
-tracing-subscriber = "*"
-clap = { version = "4.5", features = [ "derive" ] }
+itertools = "0.14"
+indexmap = "2.11"
+log = "0.4"
+rfd = "0.15"
+futures = { version = "0.3", features = ["executor"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+clap = { version = "4.5", features = ["derive"] }
 
 serde = { version = "1", features = ["derive"], optional = true }
 
-egui_dnd = "0.9.0"
-egui_plot = "0.28.0"
+egui_dnd = "0.16.0"
+egui_plot = "0.36.0"
 
 [features]
 default = ["persistence"]
@@ -53,8 +59,8 @@ persistence = ["eframe/persistence", "serde"] # Enable if you want to persist ap
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.7"
 tracing-wasm = "0.2"
-wasm-bindgen = "0.2.92"
-wasm-bindgen-futures = "0.4.42"
+wasm-bindgen = "=0.2.121"
+wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
 [target.'cfg(target_arch = "wasm32")'.dependencies.web-sys]
 version = "*"
@@ -63,6 +69,7 @@ features = [
   "Blob",
   "ErrorEvent",
   "FileReader",
+  "HtmlCanvasElement",
   "Location",
   "MessageEvent",
   "ProgressEvent",

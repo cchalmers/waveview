@@ -410,3 +410,75 @@ pub fn read_clocked_vcd(
 
     Ok((vec_output, time))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(input: &str) -> (Vec<(ScopedVar, Signal)>, u64) {
+        read_clocked_vcd(&mut std::io::Cursor::new(input.as_bytes())).unwrap()
+    }
+
+    const HEADER: &str = "\
+$timescale 1 ns $end
+$scope module top $end
+$var wire 1 ! clock $end
+$var wire 4 \" count [3:0] $end
+$upscope $end
+$enddefinitions $end
+";
+
+    #[test]
+    fn parses_scalar_and_vector_transitions() {
+        let (signals, final_time) = parse(&format!(
+            "{HEADER}#0\n0!\nb0000 \"\n#5\n1!\nb1010 \"\n#10\n0!\n"
+        ));
+
+        assert_eq!(final_time, 10);
+        assert_eq!(signals.len(), 2);
+        assert_eq!(signals[0].0.scopes[0].1, "top");
+        assert_eq!(signals[0].0.var.reference, "clock");
+        assert_eq!(
+            signals[0]
+                .1
+                .bit_range(0..11)
+                .into_iter()
+                .collect::<Vec<_>>(),
+            vec![(0, Value::V0), (5, Value::V1), (10, Value::V0),]
+        );
+        let vector_at_five = signals[1]
+            .1
+            .range(5..6)
+            .into_iter()
+            .find(|(time, _)| *time == 5)
+            .unwrap()
+            .1;
+        assert_eq!(
+            vector_at_five,
+            [Value::V1, Value::V0, Value::V1, Value::V0,]
+        );
+    }
+
+    #[test]
+    fn ignores_non_wire_variables() {
+        let input = "\
+$timescale 1 ns $end
+$scope module top $end
+$var real 1 ! analog $end
+$var wire 1 \" digital $end
+$upscope $end
+$enddefinitions $end
+#0
+r1.5 !
+0\"
+";
+        let (signals, _) = parse(input);
+        assert_eq!(signals.len(), 1);
+        assert_eq!(signals[0].0.var.reference, "digital");
+    }
+
+    #[test]
+    fn reports_a_truncated_header() {
+        assert!(read_clocked_vcd(&mut std::io::Cursor::new(b"$scope module top $end\n")).is_err());
+    }
+}

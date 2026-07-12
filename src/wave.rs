@@ -90,18 +90,16 @@ impl<'a> Wave<'a> {
 
         let show_background = true;
         if show_background {
-            wave_painter.add(epaint::RectShape {
+            wave_painter.add(epaint::RectShape::new(
                 rect,
-                rounding: Rounding::same(2.0),
-                fill: ui.visuals().extreme_bg_color,
-                stroke: ui.visuals().widgets.noninteractive.bg_stroke,
-                fill_texture_id: Default::default(),
-                uv: rect,
-                blur_width: 0.0,
-            });
+                CornerRadius::same(2),
+                ui.visuals().extreme_bg_color,
+                ui.visuals().widgets.noninteractive.bg_stroke,
+                StrokeKind::Inside,
+            ));
         }
 
-        let mut wave_ui = ui.child_ui(rect, Layout::default(), None);
+        let mut wave_ui = ui.new_child(UiBuilder::new().max_rect(rect).layout(Layout::default()));
         wave_ui.set_clip_rect(rect);
         // let mut last_high;
         // let dx = 1.0;
@@ -286,7 +284,7 @@ impl<'a> Wave<'a> {
                     //     Color32::from(Rgba::RED.multiply(0.3))
                     // };
 
-                    let galley = ui.fonts(|f| f.layout_no_wrap(txt, font, color));
+                    let galley = ui.fonts_mut(|f| f.layout_no_wrap(txt, font, color));
                     let rect = anchor.anchor_rect(Rect::from_min_size(pos, galley.size()));
                     let fill_rect = rect.expand(2.0);
                     if fill_rect.width() < (x - prev_start_x) * scale * 32.0 {

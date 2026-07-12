@@ -33,6 +33,8 @@ pub struct TemplateApp {
     url_window: UrlWindow,
     #[serde(skip)]
     err_window: ErrWindow,
+    #[serde(skip)]
+    live: crate::live::LiveVcd,
     row_height: f32,
     side_panel: SidePanel,
     info: Info,
@@ -64,6 +66,7 @@ impl Default for TemplateApp {
                 msg: String::new(),
                 open: false,
             },
+            live: crate::live::LiveVcd::default(),
 
             row_height: 32.0,
 
@@ -142,8 +145,8 @@ impl Info {
         let scroll_y = scroll_delta.y;
         ui.monospace(format!("{scroll_x:+03} {scroll_y:+03}"));
         ui.separator();
-        ui.label(RichText::new("screen_rect").strong());
-        ui.label(format!("{:?}", ctx.screen_rect()));
+        ui.label(RichText::new("content_rect").strong());
+        ui.label(format!("{:?}", ctx.content_rect()));
         ui.separator();
     }
 }
@@ -194,6 +197,7 @@ impl TemplateApp {
                 open: false,
             },
             err_window: ErrWindow { msg: String::new(), open: false },
+            live: crate::live::LiveVcd::default(),
 
             row_height: 32.0,
 
@@ -341,7 +345,8 @@ impl eframe::App for TemplateApp {
     }
 
     /// Called each time the UI needs repainting, which may be many times per second.
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, root_ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = root_ui.ctx().clone();
         let Self {
             wave_data,
             final_time,
@@ -356,6 +361,7 @@ impl eframe::App for TemplateApp {
             download,
             url_window,
             err_window,
+            live,
             row_height,
             side_panel,
             info,
@@ -436,10 +442,10 @@ impl eframe::App for TemplateApp {
         // Tip: a good default choice is to just keep the `CentralPanel`.
         // For inspiration and more examples, go to https://emilk.github.io/egui
 
-        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
+        egui::Panel::top("top_panel").show(root_ui, |ui| {
             // The top panel is often a good place for a menu bar:
-            egui::menu::bar(ui, |ui| {
-                egui::widgets::global_dark_light_mode_switch(ui);
+            egui::MenuBar::new().ui(ui, |ui| {
+                egui::widgets::global_theme_preference_switch(ui);
                 ui.separator();
                 ui.menu_button("File", |ui| {
                     if ui.button("Open File…").clicked() {
@@ -459,12 +465,16 @@ impl eframe::App for TemplateApp {
                                 None
                             }
                         }));
-                        ui.close_menu();
+                        ui.close();
                         ctx.request_repaint();
                     }
                     if ui.button("Open URL…").clicked() {
                         url_window.open = true;
-                        ui.close_menu();
+                        ui.close();
+                    }
+                    if ui.button("Connect live…").clicked() {
+                        live.open = true;
+                        ui.close();
                     }
                     if ui.button("Reset").clicked() {
                         *wave_data = vec![];
@@ -474,7 +484,7 @@ impl eframe::App for TemplateApp {
                         *y_offset = 0.0;
                         *drag_time_start = None;
                         *search_text = String::new();
-                        ui.close_menu();
+                        ui.close();
                     }
                     #[cfg(not(target_arch = "wasm32"))]
                     if ui.button("Quit").clicked() {
@@ -496,31 +506,31 @@ impl eframe::App for TemplateApp {
                         SidePanel::None => {
                             if ui.button("Show info").clicked() {
                                 *side_panel = SidePanel::Info;
-                                ui.close_menu();
+                                ui.close();
                             }
                             if ui.button("Show samples").clicked() {
                                 *side_panel = SidePanel::Samples;
-                                ui.close_menu();
+                                ui.close();
                             }
                         }
                         SidePanel::Info => {
                             if ui.button("Hide info").clicked() {
                                 *side_panel = SidePanel::None;
-                                ui.close_menu();
+                                ui.close();
                             }
                             if ui.button("Show samples").clicked() {
                                 *side_panel = SidePanel::Samples;
-                                ui.close_menu();
+                                ui.close();
                             }
                         }
                         SidePanel::Samples => {
                             if ui.button("Show info").clicked() {
                                 *side_panel = SidePanel::Info;
-                                ui.close_menu();
+                                ui.close();
                             }
                             if ui.button("Hide samples").clicked() {
                                 *side_panel = SidePanel::None;
-                                ui.close_menu();
+                                ui.close();
                             }
                         }
                     }
@@ -539,13 +549,13 @@ impl eframe::App for TemplateApp {
         match side_panel {
             SidePanel::None => (),
             SidePanel::Info => {
-                egui::SidePanel::right("inspection_panel").show(ctx, |ui| {
+                egui::Panel::right("inspection_panel").show(root_ui, |ui| {
                     let scroll_area = egui::ScrollArea::both().auto_shrink([false; 2]);
-                    scroll_area.show(ui, |ui| info.show(ctx, ui));
+                    scroll_area.show(ui, |ui| info.show(&ctx, ui));
                 });
             }
             SidePanel::Samples => {
-                egui::SidePanel::right("inspection_panel").show(ctx, |ui| {
+                egui::Panel::right("inspection_panel").show(root_ui, |ui| {
                     let scroll_area = egui::ScrollArea::both().auto_shrink([false; 2]);
                     let resp = scroll_area.show(ui, crate::samples::show_samples);
                     if let Some(url) = resp.inner {
@@ -569,7 +579,7 @@ impl eframe::App for TemplateApp {
 
         let mut dragging = false;
 
-        egui::SidePanel::left("side_panel").show(ctx, |ui| {
+        egui::Panel::left("side_panel").show(root_ui, |ui| {
             ui.set_width(180.0);
             let max_rect = ui.max_rect();
 
@@ -588,7 +598,11 @@ impl eframe::App for TemplateApp {
             let viewport =
                 Rect::from_min_size(egui::pos2(8.0, 16.0 - *y_offset), egui::vec2(180.0, 900.0));
 
-            let mut ui = ui.child_ui(viewport, *ui.layout(), None);
+            let mut ui = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(viewport)
+                    .layout(*ui.layout()),
+            );
 
             let mut content_clip_rect = max_rect.expand(ui.visuals().clip_rect_margin);
 
@@ -647,7 +661,7 @@ impl eframe::App for TemplateApp {
             });
         });
 
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().show(root_ui, |ui| {
             // The central panel the region left after adding TopPanel's and SidePanel's
             // ui.heading("eframe template");
 
@@ -712,7 +726,7 @@ impl eframe::App for TemplateApp {
                 info.x_scale = *x_scale;
 
                 let wave_resp = ui
-                    .allocate_ui_at_rect(rect, |ui| {
+                    .scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
                         let mut clip_rect = ui.clip_rect();
                         clip_rect.min.y += 16.0;
                         ui.set_clip_rect(clip_rect);
@@ -803,21 +817,21 @@ impl eframe::App for TemplateApp {
                     let rounded_x = rect.min.x + t_rounded * *x_scale * 32.0;
                     let p0 = pos2(rounded_x, max_rect.min.y + 0.0);
                     let p1 = pos2(rounded_x, max_rect.max.y);
-                    let stroke = Stroke::new(2.0, yellow);
+                    let stroke = Stroke::new(2.0_f32, yellow);
                     shapes.push(Shape::line_segment([p0, p1], stroke));
 
                     if let Some(start_t) = *drag_time_start {
                         let rounded_x = rect.min.x + (start_t as f32) * *x_scale * 32.0;
                         let sp0 = pos2(rounded_x, max_rect.min.y + 0.0);
                         let sp1 = pos2(rounded_x, max_rect.max.y);
-                        let stroke = Stroke::new(2.0, yellow);
+                        let stroke = Stroke::new(2.0_f32, yellow);
                         shapes.push(Shape::line_segment([sp0, sp1], stroke));
                         // this is looks like it works when we're scrolled to the top, overwise
                         // it's below by a few pixels
                         let pp0 = pos2(rounded_x, max_rect.min.y + 16.0);
                         shapes.push(Shape::rect_filled(
                             egui::Rect::from_two_pos(pp0, p1),
-                            egui::Rounding::ZERO,
+                            egui::CornerRadius::ZERO,
                             yellow.linear_multiply(0.1),
                         ));
                     }
@@ -832,7 +846,7 @@ impl eframe::App for TemplateApp {
                 let x_min = (main_viewport.min.x / 32.0 / *x_scale).floor() as usize;
                 let x_max = (main_viewport.max.x / 32.0 / *x_scale).ceil() as usize;
                 let mut ticks = vec![];
-                let stroke = egui::Stroke::new(2.0, yellow);
+                let stroke = egui::Stroke::new(2.0_f32, yellow);
                 let num_ticks = std::cmp::max(1, (main_viewport.width() / 64.0).floor() as usize);
                 let gap = std::cmp::max(
                     1,
@@ -879,7 +893,7 @@ impl eframe::App for TemplateApp {
                     if let Some(diff) = diff {
                         let str = format!("{}{diff}", if diff < 0 { "" } else { "+" });
                         let font = epaint::text::FontId::new(10.0, text::FontFamily::Monospace);
-                        let galley = ui.fonts(|f| f.layout_no_wrap(str, font, color));
+                        let galley = ui.fonts_mut(|f| f.layout_no_wrap(str, font, color));
                         // let rect =
                         //     Align2::RIGHT_CENTER.anchor_rect(Rect::from_min_size(p0 - galley.size() - vec2(4.0, 0.0), galley.size()));
                         ticks.push(Shape::galley(
@@ -888,7 +902,8 @@ impl eframe::App for TemplateApp {
                             color,
                         ));
                     }
-                    let galley = ui.fonts(|f| f.layout_no_wrap(used_i.to_string(), font, color));
+                    let galley =
+                        ui.fonts_mut(|f| f.layout_no_wrap(used_i.to_string(), font, color));
                     let rect = Align2::LEFT_CENTER
                         .anchor_rect(Rect::from_min_size(p0 + vec2(4.0, 0.0), galley.size()));
                     ticks.push(Shape::galley(rect.min + vec2(4.0, 0.0), galley, color));
@@ -898,13 +913,27 @@ impl eframe::App for TemplateApp {
             });
         });
 
-        url_window.show(ctx, download);
-        err_window.show(ctx);
+        url_window.show(&ctx, download);
+        err_window.show(&ctx);
+        live.show(&ctx);
+        if let Some(result) = live.poll() {
+            match result {
+                Ok((signals, time)) => {
+                    *wave_data = mk_wave_data(signals);
+                    *final_time = time.max(1);
+                    *x_scale = None;
+                }
+                Err(error) => {
+                    err_window.msg = error;
+                    err_window.open = true;
+                }
+            }
+        }
 
-        self.ui_file_drag_and_drop(ctx);
+        self.ui_file_drag_and_drop(&ctx);
 
         if false {
-            egui::Window::new("Window").show(ctx, |ui| {
+            egui::Window::new("Window").show(&ctx, |ui| {
                 ui.label("Windows can be moved by dragging them.");
                 ui.label("They are automatically sized based on contents.");
                 ui.label("You can turn on resizing and scrolling if you like.");
@@ -952,10 +981,10 @@ impl TemplateApp {
             let painter =
                 ctx.layer_painter(LayerId::new(Order::Foreground, Id::new("file_drop_target")));
 
-            let screen_rect = ctx.input(|i| i.screen_rect());
-            painter.rect_filled(screen_rect, 0.0, Color32::from_black_alpha(192));
+            let content_rect = ctx.content_rect();
+            painter.rect_filled(content_rect, 0.0, Color32::from_black_alpha(192));
             painter.text(
-                screen_rect.center(),
+                content_rect.center(),
                 Align2::CENTER_CENTER,
                 text,
                 egui::FontId::default(),

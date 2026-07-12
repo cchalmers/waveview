@@ -23,7 +23,6 @@ fn main() {
                 .with_title("waveview")
                 .with_inner_size((1536.0, 768.0))
         })),
-        follow_system_theme: false,
         ..Default::default()
     };
     eframe::run_native(
@@ -45,18 +44,25 @@ fn main() {
 
 #[cfg(target_arch = "wasm32")]
 fn main() {
+    use wasm_bindgen::JsCast as _;
+
     console_error_panic_hook::set_once();
     tracing_wasm::set_as_global_default();
 
     eframe::WebLogger::init(log::LevelFilter::Debug).ok();
 
     let signals = vec![];
+    let canvas = web_sys::window()
+        .and_then(|window| window.document())
+        .and_then(|document| document.get_element_by_id("the_canvas_id"))
+        .and_then(|element| element.dyn_into::<web_sys::HtmlCanvasElement>().ok())
+        .expect("missing canvas element #the_canvas_id");
 
     let web_options = eframe::WebOptions::default();
     wasm_bindgen_futures::spawn_local(async {
         eframe::WebRunner::new()
             .start(
-                "the_canvas_id", // hardcode it
+                canvas,
                 web_options,
                 Box::new(|cc| {
                     let app = waveview::TemplateApp::new(cc, signals, 1);

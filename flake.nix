@@ -6,7 +6,7 @@
 
     crane = {
       url = "github:ipetkov/crane";
-      inputs.nixpkgs.follows = "nixpkgs";
+      # inputs.nixpkgs.follows = "nixpkgs";
     };
 
     flake-utils.url = "github:numtide/flake-utils";
@@ -42,9 +42,12 @@
           ;
         };
 
-        # native
+        rustToolchain = pkgs.rust-bin.stable."1.97.0".minimal.override {
+          extensions = [ "clippy" "rustfmt" ];
+          targets = [ "wasm32-unknown-unknown" ];
+        };
 
-        craneLib = crane.mkLib pkgs;
+        craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
 
         # Common arguments can be set here to avoid repeating them later
         # Note: changes here will rebuild all dependency crates
@@ -56,7 +59,6 @@
             # Add additional build inputs here
           ] ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
             # Additional darwin specific inputs can be set here
-            pkgs.darwin.apple_sdk.frameworks.AppKit
             pkgs.libiconv
           ];
         };
@@ -71,13 +73,7 @@
 
         # wasm
 
-        rustToolchainForWasm = p: p.rust-bin.stable.latest.default.override {
-          # Set the build targets supported by the toolchain,
-          # wasm32-unknown-unknown is required for trunk
-          targets = [ "wasm32-unknown-unknown" ];
-        };
-        craneLibWasm = ((crane.mkLib pkgs).overrideToolchain rustToolchainForWasm).overrideScope (_final: _prev: {
-        });
+        craneLibWasm = craneLib;
 
         # Common arguments can be set here to avoid repeating them later
         commonArgsWasm = {
@@ -107,12 +103,8 @@
         my-app = craneLibWasm.buildTrunkPackage (commonArgsWasm // {
           inherit cargoArtifactsWasm;
 
-          # The version of wasm-bindgen-cli here must match the one from Cargo.lock.
-          wasm-bindgen-cli = pkgs.wasm-bindgen-cli.override {
-            version = "0.2.92";
-            hash = "sha256-1VwY8vQy7soKEgbki4LD+v259751kKxSxmo/gqE6yV0=";
-            cargoHash = "sha256-aACJ+lYNEU8FFBs158G1/JG8sc6Rq080PeKCMnwdpH0=";
-          };
+          # Keep Cargo.toml's exact wasm-bindgen version aligned with nixpkgs.
+          wasm-bindgen-cli = pkgs.wasm-bindgen-cli;
         });
 
         # Quick example on how to serve the app,
@@ -122,9 +114,10 @@
         '';
       in
       {
-        checksWasm = {
+        checks = {
           # Build the crate as part of `nix flake check` for convenience
-          inherit my-app;
+          native = my-crate;
+          wasm = my-app;
 
           # Run clippy (and deny all warnings) on the crate source,
           # again, reusing the dependency artifacts from above.
@@ -132,15 +125,20 @@
           # Note that this is done as a separate derivation so that
           # we can block the CI if there are issues here, but not
           # prevent downstream consumers from building our crate by itself.
-          my-app-clippy = craneLibWasm.cargoClippy (commonArgsWasm // {
-            inherit cargoArtifactsWasm;
+          wasm-clippy = craneLibWasm.cargoClippy (commonArgsWasm // {
+            cargoArtifacts = cargoArtifactsWasm;
             cargoClippyExtraArgs = "--all-targets -- --deny warnings";
           });
 
           # Check formatting
-          my-app-fmt = craneLibWasm.cargoFmt {
+          fmt = craneLibWasm.cargoFmt {
             inherit src;
           };
+
+          native-clippy = craneLib.cargoClippy (commonArgs // {
+            cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+            cargoClippyExtraArgs = "--all-targets -- --deny warnings";
+          });
         };
 
         packages.default = my-app;
@@ -155,6 +153,8 @@
 
         devShells = {
           default = craneLib.devShell {
+            # Trunk parses NO_COLOR as a boolean rather than following the usual presence-only convention.
+            NO_COLOR = "true";
             # Inherit inputs from checks.
             # checks = self.checks.${system};
 
@@ -165,15 +165,12 @@
             packages = with pkgs; [
               bacon
             ] ++ lib.optionals pkgs.stdenv.isDarwin [
-              pkgs.darwin.apple_sdk.frameworks.AppKit
               pkgs.libiconv
             ];
           };
 
           wasm = craneLibWasm.devShell {
-            # Inherit inputs from checks.
-            checks = self.checks.${system};
-
+            NO_COLOR = "true";
             # Additional dev-shell environment variables can be set directly
             # MY_CUSTOM_DEVELOPMENT_VAR = "something else";
 
