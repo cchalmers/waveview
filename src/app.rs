@@ -1,5 +1,5 @@
 use crate::vcd;
-use crate::wave;
+use crate::wave_dispatch;
 use eframe::egui;
 use eframe::egui::NumExt;
 use egui::*;
@@ -751,14 +751,15 @@ impl eframe::App for TemplateApp {
                         // });
                         ui.vertical(|ui| {
                             for d in filtered.iter().take(max_row).skip(min_row) {
-                                let mut wave = wave::Wave::new(
+                                wave_dispatch::render_wave(
+                                    ui,
                                     &d.0,
                                     *x_scale,
-                                    viewport.min.x..=viewport.max.x,
+                                    viewport.min.x,
+                                    viewport.max.x,
+                                    *row_height,
                                     &d.1,
                                 );
-                                wave.height = *row_height;
-                                wave.ui(ui);
                             }
                         });
 

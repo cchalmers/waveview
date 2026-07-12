@@ -29,6 +29,7 @@ fn main() {
         "waveview",
         native_options,
         Box::new(move |cc| {
+            waveview::install_reload_repaint(&cc.egui_ctx);
             let (signals, time) = if let Some(path) = &opt.starting_file {
                 let file = std::fs::File::open(path).unwrap();
                 let mut buf_file = std::io::BufReader::new(file);

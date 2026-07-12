@@ -3,7 +3,7 @@ use egui::*;
 use egui_plot::PlotPoint;
 use std::ops::RangeInclusive;
 // use std::ops::RangeInclusive;
-use crate::vcd;
+use waveview_model::vcd;
 
 pub struct Wave<'a> {
     scale: f32,

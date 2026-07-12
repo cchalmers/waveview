@@ -112,6 +112,23 @@
         serve-app = pkgs.writeShellScriptBin "serve-app" ''
           ${pkgs.python3Minimal}/bin/python3 -m http.server --directory ${my-app} 8000
         '';
+
+        reload-waveview = pkgs.writeShellApplication {
+          name = "reload-waveview";
+          runtimeInputs = [ rustToolchain pkgs.entr pkgs.findutils ];
+          text = ''
+            cargo build -p waveview-ui-reload
+            while true; do
+              find waveview-ui waveview-ui-reload waveview-model -type f \
+                \( -name '*.rs' -o -name Cargo.toml \) \
+                | entr -dnp cargo build -p waveview-ui-reload \
+                || true
+            done &
+            watcher_pid=$!
+            trap 'kill "$watcher_pid" 2>/dev/null || true' EXIT INT TERM
+            cargo run --features reload -- "$@"
+          '';
+        };
       in
       {
         checks = {
@@ -139,6 +156,11 @@
             cargoArtifacts = craneLib.buildDepsOnly commonArgs;
             cargoClippyExtraArgs = "--all-targets -- --deny warnings";
           });
+
+          reload-clippy = craneLib.cargoClippy (commonArgs // {
+            cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+            cargoClippyExtraArgs = "--features reload --all-targets -- --deny warnings";
+          });
         };
 
         packages.default = my-app;
@@ -149,6 +171,10 @@
 
         apps.native = flake-utils.lib.mkApp {
           drv = my-crate;
+        };
+
+        apps.reload = flake-utils.lib.mkApp {
+          drv = reload-waveview;
         };
 
         devShells = {
@@ -164,6 +190,7 @@
             # Extra inputs can be added here; cargo and rustc are provided by default.
             packages = with pkgs; [
               bacon
+              reload-waveview
             ] ++ lib.optionals pkgs.stdenv.isDarwin [
               pkgs.libiconv
             ];

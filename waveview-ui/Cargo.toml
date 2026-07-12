@@ -1,0 +1,12 @@
+[package]
+name = "waveview-ui"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.92"
+
+[dependencies]
+eframe = "0.35.0"
+egui_plot = "0.36.0"
+epaint = "0.35.0"
+log = "0.4"
+waveview-model = { path = "../waveview-model" }

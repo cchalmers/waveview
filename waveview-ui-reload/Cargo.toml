@@ -1,0 +1,13 @@
+[package]
+name = "waveview-ui-reload"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.92"
+
+[lib]
+crate-type = ["dylib"]
+
+[dependencies]
+eframe = "0.35.0"
+waveview-model = { path = "../waveview-model" }
+waveview-ui = { path = "../waveview-ui" }

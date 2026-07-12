@@ -3,8 +3,10 @@
 #![warn(clippy::all, rust_2018_idioms)]
 
 pub mod app;
-pub mod vcd;
-mod wave;
+pub use waveview_model::vcd;
+mod wave_dispatch;
 pub use app::TemplateApp;
 mod live;
 pub mod samples;
+
+pub use wave_dispatch::install_reload_repaint;

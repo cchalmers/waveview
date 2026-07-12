@@ -7,7 +7,7 @@ edition = "2021"
 rust-version = "1.92"
 
 [workspace]
-members = ["waveserve"]
+members = ["waveserve", "waveview-model", "waveview-ui", "waveview-ui-reload"]
 default-members = ["."]
 resolver = "2"
 
@@ -22,13 +22,10 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 eframe = "0.35.0"
-epaint = "0.35.0"
 ehttp = "0.6.0"
 ewebsock = { version = "0.8.0", features = ["tls"] }
 color-eyre = "0.6.5"
-vcd = "0.7"
 itertools = "0.14"
-indexmap = "2.11"
 log = "0.4"
 rfd = "0.15"
 futures = { version = "0.3", features = ["executor"] }
@@ -39,11 +36,15 @@ clap = { version = "4.5", features = ["derive"] }
 serde = { version = "1", features = ["derive"], optional = true }
 
 egui_dnd = "0.16.0"
-egui_plot = "0.36.0"
+waveview-model = { path = "waveview-model" }
+waveview-ui = { path = "waveview-ui" }
+hot-lib-reloader = { version = "0.8.2", optional = true }
+waveview-ui-reload = { path = "waveview-ui-reload", optional = true }
 
 [features]
 default = ["persistence"]
 persistence = ["eframe/persistence", "serde"] # Enable if you want to persist app state on shutdown
+reload = ["dep:hot-lib-reloader", "dep:waveview-ui-reload"]
 
 # [profile.release]
 # opt-level = 2 # fast and small wasm

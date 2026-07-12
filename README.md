@@ -30,6 +30,24 @@ trunk build
 nix flake check
 ```
 
+## Native UI hot reload
+
+The native host owns loaded VCD data, viewport state, file operations, and live WebSocket
+connections. Waveform painting lives in a small dynamic library, so it can be rebuilt and replaced
+without restarting the host or losing that state.
+
+Run the viewer and UI watcher together with:
+
+```sh
+nix run .#reload -- path/to/capture.vcd
+```
+
+Alternatively, from `nix develop`, run `reload-waveview`. Changes under `waveview-ui` rebuild the
+native-only `waveview-ui-reload` shim and request an immediate egui repaint. Changes to
+`waveview-model` also rebuild the dylib, but changing the layout of shared model types while the host
+is running is unsafe; restart after those changes. Normal `cargo run`, release, and WASM builds
+remain statically linked.
+
 ## Live VCD server
 
 Start a simulator writing a VCD, then run:
@@ -44,8 +62,9 @@ The same client works in native and WASM builds. See [the protocol description](
 
 ## Repository layout
 
-- `src/vcd.rs`: VCD parsing and indexed signal storage.
-- `src/wave.rs`: waveform painting.
+- `waveview-model`: stable VCD parsing and indexed signal storage shared across the reload boundary.
+- `waveview-ui`: reloadable waveform painting.
+- `waveview-ui-reload`: native-only dynamic-library shim used by the reload feature.
 - `src/app.rs`: viewer state and UI.
 - `waveserve`: live VCD WebSocket server.
 - `assets` and `index.html`: Trunk web application assets.
