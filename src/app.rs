@@ -594,39 +594,45 @@ impl eframe::App for TemplateApp {
             // let rect = egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), y_min..=y_max);
 
             if search_text.is_empty() {
-                egui_dnd::dnd(&mut ui, "dnd").show_custom_vec(
-                    &mut displayed_items,
-                    |ui, items, iter| {
-                        ui.horizontal(|ui| {
-                            ui.set_height(25.0 + row_height_with_spacing * min_row as f32)
-                        });
-                        for (i, item) in items.iter().enumerate().take(max_row).skip(min_row) {
-                            iter.next(ui, egui::Id::new(item.id()), i, true, |ui, item_handle| {
-                                item_handle.ui(ui, |ui, handle, _state| {
-                                    ui.horizontal(|ui| {
-                                        ui.set_height(*row_height);
-                                        handle.ui(ui, |ui| {
-                                            if let Some(signal) = item
-                                                .signal_id()
-                                                .and_then(|id| viewer.waveform().signal(id))
+                let response = egui_dnd::dnd(&mut ui, "dnd").show_custom(|ui, iter| {
+                    ui.horizontal(|ui| {
+                        ui.set_height(25.0 + row_height_with_spacing * min_row as f32)
+                    });
+                    for (i, item) in displayed_items
+                        .iter()
+                        .enumerate()
+                        .take(max_row)
+                        .skip(min_row)
+                    {
+                        iter.next(ui, egui::Id::new(item.id()), i, true, |ui, item_handle| {
+                            item_handle.ui(ui, |ui, handle, _state| {
+                                ui.horizontal(|ui| {
+                                    ui.set_height(*row_height);
+                                    handle.ui(ui, |ui| {
+                                        if let Some(signal) = item
+                                            .signal_id()
+                                            .and_then(|id| viewer.waveform().signal(id))
+                                        {
+                                            if ui
+                                                .selectable_label(
+                                                    focused_item == Some(item.id()),
+                                                    signal.name(),
+                                                )
+                                                .clicked()
                                             {
-                                                if ui
-                                                    .selectable_label(
-                                                        focused_item == Some(item.id()),
-                                                        signal.name(),
-                                                    )
-                                                    .clicked()
-                                                {
-                                                    requested_focus = Some(item.id());
-                                                }
+                                                requested_focus = Some(item.id());
                                             }
-                                        });
+                                        }
                                     });
-                                })
-                            });
-                        }
-                    },
-                );
+                                });
+                            })
+                        });
+                    }
+                });
+                if let Some(update) = response.final_update() {
+                    let item = displayed_items.remove(update.from);
+                    displayed_items.insert(update.to, item);
+                }
             } else {
                 ui.horizontal(|ui| ui.set_height(25.0 + row_height_with_spacing * min_row as f32));
                 for item in displayed_items
