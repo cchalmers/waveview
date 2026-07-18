@@ -4,4 +4,5 @@
 /result-bin
 *.vcd
 !/vcds/README.md
+!/vcds/edge_cases.vcd
 .DS_Store

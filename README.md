@@ -30,6 +30,9 @@ trunk build
 nix flake check
 ```
 
+See the [development workflow](docs/development.md) for native, hot-reload, and WASM commands and
+the [implementation plan](docs/plan/README.md) for the staged Vim-first viewer work.
+
 ## Native UI hot reload
 
 The native host owns loaded VCD data, viewport state, file operations, and live WebSocket

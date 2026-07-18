@@ -1,0 +1,25 @@
+$date
+    2026-07-18
+$end
+$version
+    waveview regression fixture
+$end
+$timescale 1 ns $end
+$scope module top $end
+$var wire 1 ! scalar $end
+$var wire 4 " bus [3:0] $end
+$var wire 1 # repeated $end
+$upscope $end
+$enddefinitions $end
+#0
+x!
+bxxxx "
+0#
+#5
+z!
+bz01x "
+0#
+#10
+1!
+b1010 "
+#15

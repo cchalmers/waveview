@@ -481,4 +481,76 @@ r1.5 !
     fn reports_a_truncated_header() {
         assert!(read_clocked_vcd(&mut std::io::Cursor::new(b"$scope module top $end\n")).is_err());
     }
+
+    #[test]
+    fn parses_the_edge_case_fixture() {
+        // Keep this input in sync with the user-loadable `vcds/edge_cases.vcd` fixture. The test
+        // is deliberately self-contained because Git-backed Nix flakes omit new untracked files,
+        // and the development plan is kept uncommitted while it is being executed.
+        let input = r#"$timescale 1 ns $end
+$scope module top $end
+$var wire 1 ! scalar $end
+$var wire 4 " bus [3:0] $end
+$var wire 1 # repeated $end
+$upscope $end
+$enddefinitions $end
+#0
+x!
+bxxxx "
+0#
+#5
+z!
+bz01x "
+0#
+#10
+1!
+b1010 "
+#15
+"#;
+        let (signals, final_time) = parse(input);
+
+        assert_eq!(final_time, 15);
+        assert_eq!(signals.len(), 3);
+
+        let signal = |name: &str| {
+            &signals
+                .iter()
+                .find(|(var, _)| var.var.reference == name)
+                .unwrap()
+                .1
+        };
+
+        assert_eq!(
+            signal("scalar")
+                .bit_range(0..16)
+                .into_iter()
+                .collect::<Vec<_>>(),
+            vec![
+                (0, Value::X),
+                (5, Value::Z),
+                (10, Value::V1),
+                (15, Value::V1),
+            ]
+        );
+        assert_eq!(
+            signal("repeated")
+                .bit_range(0..16)
+                .into_iter()
+                .collect::<Vec<_>>(),
+            vec![(0, Value::V0), (5, Value::V0), (15, Value::V0)]
+        );
+        assert_eq!(
+            signal("bus")
+                .range(0..16)
+                .into_iter()
+                .map(|(time, values)| (time, values.to_vec()))
+                .collect::<Vec<_>>(),
+            vec![
+                (0, vec![Value::X, Value::X, Value::X, Value::X]),
+                (5, vec![Value::Z, Value::V0, Value::V1, Value::X]),
+                (10, vec![Value::V1, Value::V0, Value::V1, Value::V0]),
+                (15, vec![Value::V1, Value::V0, Value::V1, Value::V0]),
+            ]
+        );
+    }
 }

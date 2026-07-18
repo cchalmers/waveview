@@ -52,7 +52,7 @@
         # Common arguments can be set here to avoid repeating them later
         # Note: changes here will rebuild all dependency crates
         commonArgs = {
-          src = craneLib.cleanCargoSource ./.;
+          inherit src;
           strictDeps = true;
 
           buildInputs = [
@@ -63,8 +63,10 @@
           ];
         };
 
+        cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+
         my-crate = craneLib.buildPackage (commonArgs // {
-          cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+          inherit cargoArtifacts;
 
           # Additional environment variables or build phases/hooks can be set
           # here *without* rebuilding all dependency crates
@@ -136,6 +138,11 @@
           native = my-crate;
           wasm = my-app;
 
+          workspace-tests = craneLib.cargoTest (commonArgs // {
+            inherit cargoArtifacts;
+            cargoTestExtraArgs = "--workspace";
+          });
+
           # Run clippy (and deny all warnings) on the crate source,
           # again, reusing the dependency artifacts from above.
           #
@@ -153,8 +160,8 @@
           };
 
           native-clippy = craneLib.cargoClippy (commonArgs // {
-            cargoArtifacts = craneLib.buildDepsOnly commonArgs;
-            cargoClippyExtraArgs = "--all-targets -- --deny warnings";
+            inherit cargoArtifacts;
+            cargoClippyExtraArgs = "--workspace --all-targets -- --deny warnings";
           });
 
           reload-clippy = craneLib.cargoClippy (commonArgs // {
@@ -180,7 +187,7 @@
         devShells = {
           default = craneLib.devShell {
             # Trunk parses NO_COLOR as a boolean rather than following the usual presence-only convention.
-            NO_COLOR = "true";
+            # NO_COLOR = "true";
             # Inherit inputs from checks.
             # checks = self.checks.${system};
 
@@ -197,7 +204,7 @@
           };
 
           wasm = craneLibWasm.devShell {
-            NO_COLOR = "true";
+            # NO_COLOR = "true";
             # Additional dev-shell environment variables can be set directly
             # MY_CUSTOM_DEVELOPMENT_VAR = "something else";
 
