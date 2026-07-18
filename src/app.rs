@@ -630,8 +630,7 @@ impl eframe::App for TemplateApp {
                     }
                 });
                 if let Some(update) = response.final_update() {
-                    let item = displayed_items.remove(update.from);
-                    displayed_items.insert(update.to, item);
+                    egui_dnd::utils::shift_vec(update.from, update.to, &mut displayed_items);
                 }
             } else {
                 ui.horizontal(|ui| ui.set_height(25.0 + row_height_with_spacing * min_row as f32));
