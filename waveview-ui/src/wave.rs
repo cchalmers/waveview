@@ -6,7 +6,7 @@ use std::ops::RangeInclusive;
 use waveview_model::vcd;
 
 pub struct Wave<'a> {
-    scale: f32,
+    pixels_per_tick: f32,
     view_range: RangeInclusive<f32>,
     pub height: f32,
     name: &'a str,
@@ -47,12 +47,12 @@ impl<'a> Wave<'a> {
     // pub fn new(name: &'a str, scale: f32, view_range: RangeInclusive<f32>, wave_data: &'a [bool]) -> Self {
     pub fn new(
         name: &'a str,
-        scale: f32,
+        pixels_per_tick: f32,
         view_range: RangeInclusive<f32>,
         wave_data: &'a vcd::Signal,
     ) -> Self {
         Wave {
-            scale,
+            pixels_per_tick,
             view_range,
             height: 32.0,
             wave_data,
@@ -62,7 +62,7 @@ impl<'a> Wave<'a> {
 
     pub fn ui(self, ui: &mut Ui) {
         let Self {
-            scale,
+            pixels_per_tick,
             view_range,
             height,
             wave_data,
@@ -70,12 +70,8 @@ impl<'a> Wave<'a> {
         } = self;
         log::trace!("Wave::new({name})");
 
-        let unscaled_unit_width = 32.0;
-
-        // let width = range.end() - range.start();
-        let total_wave_width = scale * wave_data.final_time() as f32;
         let (rect, _response) = ui.allocate_exact_size(
-            vec2(total_wave_width * unscaled_unit_width, height),
+            vec2(ui.available_width(), height),
             // Sense::hover()
             Sense::focusable_noninteractive(),
         );
@@ -104,8 +100,8 @@ impl<'a> Wave<'a> {
         // let mut last_high;
         // let dx = 1.0;
         // let dy = 0.9;
-        let first_ix = (view_range.start() / 32.0 / scale).floor() as u64;
-        let last_ix = (view_range.end() / 32.0 / scale).ceil() as u64;
+        let first_ix = view_range.start().floor().max(0.0) as u64;
+        let last_ix = view_range.end().ceil().max(first_ix as f32 + 1.0) as u64;
         if last_ix <= first_ix {
             return;
         }
@@ -176,13 +172,15 @@ impl<'a> Wave<'a> {
             //     pts.push(PlotPoint::new(last_view_ix as f32, 0.1));
             // }
 
-            fn pos_from_val(value: PlotPoint, rect: Rect, len: usize) -> egui::Pos2 {
+            fn pos_from_val(
+                value: PlotPoint,
+                rect: Rect,
+                view_range: &RangeInclusive<f32>,
+            ) -> egui::Pos2 {
                 let x = remap(
                     value.x as f32,
-                    // range,
-                    0.0..=(len as f32),
+                    view_range.clone(),
                     rect.left()..=rect.right(),
-                    // 0.0..=(32.0),
                 );
                 let y = remap(
                     value.y as f32,
@@ -196,7 +194,7 @@ impl<'a> Wave<'a> {
 
             let shapes = vec![Shape::line(
                 pts.iter()
-                    .map(|v| pos_from_val(*v, rect, wave_data.final_time() as usize))
+                    .map(|v| pos_from_val(*v, rect, &view_range))
                     .collect(),
                 stroke,
             )];
@@ -225,13 +223,15 @@ impl<'a> Wave<'a> {
                 pts_b.push(PlotPoint::new(x - x_taper, 0.9));
                 pts_b.push(PlotPoint::new(x, 0.5));
             }
-            fn pos_from_val(value: PlotPoint, rect: Rect, len: usize) -> egui::Pos2 {
+            fn pos_from_val(
+                value: PlotPoint,
+                rect: Rect,
+                view_range: &RangeInclusive<f32>,
+            ) -> egui::Pos2 {
                 let x = remap(
                     value.x as f32,
-                    // range,
-                    0.0..=(len as f32),
+                    view_range.clone(),
                     rect.left()..=rect.right(),
-                    // 0.0..=(32.0),
                 );
                 let y = remap(
                     value.y as f32,
@@ -247,19 +247,19 @@ impl<'a> Wave<'a> {
                 Shape::line(
                     pts_a
                         .iter()
-                        .map(|v| pos_from_val(*v, rect, wave_data.final_time() as usize))
+                        .map(|v| pos_from_val(*v, rect, &view_range))
                         .collect(),
                     stroke,
                 ),
                 Shape::line(
                     pts_b
                         .iter()
-                        .map(|v| pos_from_val(*v, rect, wave_data.final_time() as usize))
+                        .map(|v| pos_from_val(*v, rect, &view_range))
                         .collect(),
                     stroke,
                 ),
             ];
-            if scale > 0.05 {
+            if pixels_per_tick > 1.6 {
                 let mut prev = &wave_data[first_ix];
                 // eprintln!("first_ix = {first_ix}, prev = {prev:?}");
                 let mut prev_start_x = first_ix as f32 + 0.5;
@@ -268,7 +268,7 @@ impl<'a> Wave<'a> {
                     let pos = pos_from_val(
                         PlotPoint::new((prev_start_x + x) / 2.0, 0.5),
                         rect,
-                        wave_data.final_time() as usize,
+                        &view_range,
                     );
                     // TODO don't just use debug instance, have different format options
                     let txt = format!("{prev:?}");
@@ -287,7 +287,7 @@ impl<'a> Wave<'a> {
                     let galley = ui.fonts_mut(|f| f.layout_no_wrap(txt, font, color));
                     let rect = anchor.anchor_rect(Rect::from_min_size(pos, galley.size()));
                     let fill_rect = rect.expand(2.0);
-                    if fill_rect.width() < (x - prev_start_x) * scale * 32.0 {
+                    if fill_rect.width() < (x - prev_start_x) * pixels_per_tick {
                         // shapes.push(Shape::rect_filled(fill_rect, 2.0, fill_color));
                         shapes.push(Shape::galley(rect.min, galley, color));
                     }

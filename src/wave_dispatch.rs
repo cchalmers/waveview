@@ -16,17 +16,33 @@ mod hot_ui {
 pub fn render_wave(
     ui: &mut egui::Ui,
     name: &str,
-    scale: f32,
+    pixels_per_tick: f32,
     view_start: f32,
     view_end: f32,
     height: f32,
     signal: &vcd::Signal,
 ) {
     #[cfg(all(feature = "reload", not(target_arch = "wasm32")))]
-    hot_ui::render_wave(ui, name, scale, view_start, view_end, height, signal);
+    hot_ui::render_wave(
+        ui,
+        name,
+        pixels_per_tick,
+        view_start,
+        view_end,
+        height,
+        signal,
+    );
 
     #[cfg(not(all(feature = "reload", not(target_arch = "wasm32"))))]
-    waveview_ui::render_wave(ui, name, scale, view_start, view_end, height, signal);
+    waveview_ui::render_wave(
+        ui,
+        name,
+        pixels_per_tick,
+        view_start,
+        view_end,
+        height,
+        signal,
+    );
 }
 
 pub fn install_reload_repaint(ctx: &egui::Context) {

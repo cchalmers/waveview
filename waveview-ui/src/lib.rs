@@ -9,13 +9,13 @@ use waveview_model::vcd;
 pub fn render_wave(
     ui: &mut egui::Ui,
     name: &str,
-    scale: f32,
+    pixels_per_tick: f32,
     view_start: f32,
     view_end: f32,
     height: f32,
     signal: &vcd::Signal,
 ) {
-    let mut wave = wave::Wave::new(name, scale, view_start..=view_end, signal);
+    let mut wave = wave::Wave::new(name, pixels_per_tick, view_start..=view_end, signal);
     wave.height = height;
     wave.ui(ui);
 }

@@ -36,6 +36,8 @@ Host-only `Runtime` state stays in `waveview`:
 - [x] Implement a pure reducer returning zero or more effects.
 - [ ] Make effect completion feed commands back into the same reducer.
 - [ ] Convert Reset, zoom, search, reorder, cursor measurement, and loaded-wave replacement first.
+  Reset, fit, zoom, horizontal pan, and loaded-wave replacement now use the command path; search,
+  reorder, and cursor measurement remain.
 - [ ] Convert remaining menu and mouse mutations.
 - [x] Add command-level tests for the initial viewport/cursor/capture slice without constructing an
   egui context.
