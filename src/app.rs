@@ -3,7 +3,8 @@ use crate::wave_dispatch;
 use eframe::egui;
 use eframe::egui::NumExt;
 use egui::*;
-use waveview_model::viewer::{ViewerCommand, ViewerState};
+use waveview_model::viewer::{DisplayedItem, EffectRequest, ViewerCommand, ViewerState};
+use waveview_model::waveform::Waveform;
 
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
@@ -14,10 +15,8 @@ use std::task::Poll;
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)]
 pub struct TemplateApp {
-    wave_data: Vec<(String, vcd::Signal)>,
     viewer: ViewerState,
     y_offset: f32,
-    drag_time_start: Option<usize>,
     #[serde(skip)]
     dropped_files: Vec<egui::DroppedFile>,
     // a_future: Option<std::pin::Pin<Box<dyn Future<Output = Option<rfd::FileHandle>>>>>,
@@ -36,16 +35,13 @@ pub struct TemplateApp {
     row_height: f32,
     side_panel: SidePanel,
     info: Info,
-    search_text: String,
 }
 
 impl Default for TemplateApp {
     fn default() -> Self {
         Self {
-            wave_data: vec![],
             viewer: ViewerState::default(),
             y_offset: 0.0,
-            drag_time_start: None,
             dropped_files: vec![],
             a_future: None,
             open_file_ctx: None,
@@ -74,8 +70,6 @@ impl Default for TemplateApp {
                 viewport: Rect::NOTHING,
                 pixels_per_tick: 0.0,
             },
-
-            search_text: String::new(),
         }
     }
 }
@@ -155,25 +149,9 @@ impl TemplateApp {
             }
         }
 
-        let wave_data = sigs
-            .into_iter()
-            .map(|(var, sig)| {
-                let mut name: String =
-                    itertools::intersperse(var.scopes.iter().map(|x| x.1.as_str()), ".").collect();
-                if !name.is_empty() {
-                    name.push('.');
-                }
-                name.push_str(&var.var.reference);
-                // let bools = sig.scalars().map(|(_, v)| v == vcd::Value::V1).collect();
-                // eprintln!("bools = {bools:?}");
-                (name, sig)
-            })
-            .collect();
         Self {
-            wave_data,
-            viewer: ViewerState::new(final_time),
+            viewer: ViewerState::with_waveform(mk_waveform(sigs, final_time)),
             y_offset: 0.0,
-            drag_time_start: None,
             dropped_files: vec![],
             a_future: None,
             open_file_ctx: None,
@@ -189,8 +167,6 @@ impl TemplateApp {
 
             side_panel: if cfg!(debug_assertions) { SidePanel::Samples } else { SidePanel::None },
             info: Info { rect: Rect::NOTHING, min_rect: Rect::NOTHING, max_rect: Rect::NOTHING, viewport: Rect::NOTHING, pixels_per_tick: 0.0 },
-
-            search_text: String::new(),
         }
     }
 }
@@ -200,26 +176,6 @@ pub enum Download {
     InProgress,
     Done(ehttp::Result<ehttp::Response>),
 }
-
-// impl Default for TemplateApp {
-//     fn default() -> Self {
-//         let num_rows = 1000;
-//         let mut wave_data = vec![];
-//         let mut rng = rand::thread_rng();
-//         for row in 0..num_rows {
-//             let mut dat = vec![true];
-//             for _ in 0..NUM_CYCLES {
-//                 dat.push(rng.gen());
-//             }
-//             wave_data.push((format!("wave-{}", row), dat));
-//         }
-//         Self {
-//             wave_data,
-//             x_scale: 3.0,
-//             x_offset: None,
-//         }
-//     }
-// }
 
 // Custom waker
 //
@@ -231,9 +187,7 @@ const RAW_WAKER_VTABLE: std::task::RawWakerVTable =
     std::task::RawWakerVTable::new(my_clone, my_wake_by_ref, my_wake_by_ref, my_drop);
 
 struct OpenedVcd {
-    // filename: String,
-    wave_data: Vec<(String, vcd::Signal)>,
-    time: u64,
+    waveform: Waveform,
 }
 
 struct OpenFileCtx {
@@ -285,7 +239,8 @@ struct UrlWindow {
 }
 
 impl UrlWindow {
-    fn show(&mut self, ctx: &egui::Context, download: &Arc<Mutex<Download>>) {
+    fn show(&mut self, ctx: &egui::Context) -> Option<String> {
+        let mut requested_url = None;
         if self.open {
             let window = egui::Window::new("Open URL")
                 .id(egui::Id::new("open_url"))
@@ -304,15 +259,7 @@ impl UrlWindow {
                     .show(ui);
                 ui.horizontal(|ui| {
                     if ui.button("fetch").clicked() {
-                        let request = ehttp::Request::get(&self.url);
-                        let dl = download.clone();
-                        *dl.lock().unwrap() = Download::InProgress;
-                        let ctx2 = ctx.clone();
-                        ehttp::fetch(request, move |response| {
-                            *dl.lock().unwrap() = Download::Done(response);
-                            ctx2.request_repaint();
-                        });
-                        ctx.request_repaint();
+                        requested_url = Some(self.url.clone());
                         close = true;
                     }
                 });
@@ -321,6 +268,7 @@ impl UrlWindow {
                 self.open = false;
             }
         }
+        requested_url
     }
 }
 
@@ -334,10 +282,8 @@ impl eframe::App for TemplateApp {
     fn ui(&mut self, root_ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = root_ui.ctx().clone();
         let Self {
-            wave_data,
             viewer,
             y_offset,
-            drag_time_start,
             dropped_files: _,
             a_future,
             open_file_ctx,
@@ -348,7 +294,6 @@ impl eframe::App for TemplateApp {
             row_height,
             side_panel,
             info,
-            search_text,
         } = self;
 
         {
@@ -376,9 +321,8 @@ impl eframe::App for TemplateApp {
                     if res.status == 200 {
                         match vcd::read_clocked_vcd(&mut cursor) {
                             Ok((signals, time)) => {
-                                *wave_data = mk_wave_data(signals);
-                                viewer.apply(ViewerCommand::ReplaceCapture {
-                                    end_time: time,
+                                viewer.apply(ViewerCommand::ReplaceWaveform {
+                                    waveform: mk_waveform(signals, time),
                                     preserve_view: false,
                                 });
                             }
@@ -413,9 +357,8 @@ impl eframe::App for TemplateApp {
                 Poll::Pending => (),
                 Poll::Ready(shandle) => {
                     if let Some(handle) = shandle {
-                        *wave_data = handle.wave_data;
-                        viewer.apply(ViewerCommand::ReplaceCapture {
-                            end_time: handle.time,
+                        viewer.apply(ViewerCommand::ReplaceWaveform {
+                            waveform: handle.waveform,
                             preserve_view: false,
                         });
                     }
@@ -437,22 +380,24 @@ impl eframe::App for TemplateApp {
                 ui.separator();
                 ui.menu_button("File", |ui| {
                     if ui.button("Open File…").clicked() {
-                        *a_future = Some(Box::pin(async {
-                            let handle = rfd::AsyncFileDialog::new().pick_file().await;
-                            if let Some(h) = &handle {
-                                let bytes = h.read().await;
-                                let mut cursor = std::io::Cursor::new(&bytes);
-                                let (signals, time) = vcd::read_clocked_vcd(&mut cursor).unwrap();
-                                let wave_data = mk_wave_data(signals);
-                                Some(OpenedVcd {
-                                    // filename: h.file_name(),
-                                    wave_data,
-                                    time,
-                                })
-                            } else {
-                                None
+                        for effect in viewer.apply(ViewerCommand::RequestOpenFile) {
+                            if effect == EffectRequest::OpenFile {
+                                *a_future = Some(Box::pin(async {
+                                    let handle = rfd::AsyncFileDialog::new().pick_file().await;
+                                    if let Some(h) = &handle {
+                                        let bytes = h.read().await;
+                                        let mut cursor = std::io::Cursor::new(&bytes);
+                                        let (signals, time) =
+                                            vcd::read_clocked_vcd(&mut cursor).unwrap();
+                                        Some(OpenedVcd {
+                                            waveform: mk_waveform(signals, time),
+                                        })
+                                    } else {
+                                        None
+                                    }
+                                }));
                             }
-                        }));
+                        }
                         ui.close();
                         ctx.request_repaint();
                     }
@@ -465,19 +410,32 @@ impl eframe::App for TemplateApp {
                         ui.close();
                     }
                     if ui.button("Reset").clicked() {
-                        *wave_data = vec![];
-                        viewer.apply(ViewerCommand::ReplaceCapture {
-                            end_time: 1,
+                        viewer.apply(ViewerCommand::ReplaceWaveform {
+                            waveform: Waveform::empty(),
                             preserve_view: false,
                         });
                         *y_offset = 0.0;
-                        *drag_time_start = None;
-                        *search_text = String::new();
                         ui.close();
                     }
                     #[cfg(not(target_arch = "wasm32"))]
                     if ui.button("Quit").clicked() {
                         ctx.send_viewport_cmd(ViewportCommand::Close);
+                    }
+                });
+                ui.menu_button("Edit", |ui| {
+                    if ui.button("Undo display change").clicked() {
+                        viewer.apply(ViewerCommand::UndoDisplayChange);
+                        ui.close();
+                    }
+                    if ui.button("Redo display change").clicked() {
+                        viewer.apply(ViewerCommand::RedoDisplayChange);
+                        ui.close();
+                    }
+                    if let Some(id) = viewer.cursor_state().focused_item() {
+                        if ui.button("Remove focused signal").clicked() {
+                            viewer.apply(ViewerCommand::RemoveDisplayedItem(id));
+                            ui.close();
+                        }
                     }
                 });
                 ui.menu_button("View", |ui| {
@@ -568,10 +526,15 @@ impl eframe::App for TemplateApp {
             }
         }
 
-        // let main_viewport = std::rc::Rc::new(std::cell::Cell::new(None));
-        // let mut main_viewport = None;
-
-        let mut dragging = false;
+        let mut search_text = viewer.search().to_owned();
+        let original_order: Vec<_> = viewer
+            .displayed_items()
+            .iter()
+            .map(DisplayedItem::id)
+            .collect();
+        let mut displayed_items = viewer.displayed_items().to_vec();
+        let mut requested_focus = None;
+        let focused_item = viewer.cursor_state().focused_item();
 
         egui::Panel::left("side_panel").show(root_ui, |ui| {
             ui.set_width(180.0);
@@ -580,7 +543,7 @@ impl eframe::App for TemplateApp {
             ui.horizontal(|ui| {
                 // TODO adjust scroll offset so you don't move when changing height
                 ui.label("🔎");
-                let _resp = ui.text_edit_singleline(search_text);
+                ui.text_edit_singleline(&mut search_text);
             });
             // ui.separator();
 
@@ -605,7 +568,15 @@ impl eframe::App for TemplateApp {
             // add clipping for the separator
             // content_clip_rect.min.y += 2.0;
             ui.set_clip_rect(content_clip_rect);
-            let num_rows = wave_data.len();
+            let matches_search = |item: &DisplayedItem| {
+                item.signal_id()
+                    .and_then(|id| viewer.waveform().signal(id))
+                    .is_some_and(|signal| signal.name().contains(&search_text))
+            };
+            let num_rows = displayed_items
+                .iter()
+                .filter(|item| matches_search(item))
+                .count();
             ui.set_height((row_height_with_spacing * num_rows as f32 - spacing.y).at_least(0.0));
             // let min_row = (viewport.min.y / row_height_with_spacing);
             let min_row = (*y_offset / row_height_with_spacing).floor().at_least(0.0) as usize;
@@ -622,38 +593,79 @@ impl eframe::App for TemplateApp {
 
             // let rect = egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), y_min..=y_max);
 
-            use egui_dnd::DragDropItem;
-
-            // TODO fix this changing x scroll in main window
-            egui_dnd::dnd(&mut ui, "dnd").show_custom_vec(wave_data, |ui, wave_data, iter| {
-                // 32 looks better with default layout but 25 looks better with top_down/centered
-                // ui.horizontal(|ui| ui.set_height(32.0 + row_height_with_spacing * min_row as f32));
+            if search_text.is_empty() {
+                egui_dnd::dnd(&mut ui, "dnd").show_custom_vec(
+                    &mut displayed_items,
+                    |ui, items, iter| {
+                        ui.horizontal(|ui| {
+                            ui.set_height(25.0 + row_height_with_spacing * min_row as f32)
+                        });
+                        for (i, item) in items.iter().enumerate().take(max_row).skip(min_row) {
+                            iter.next(ui, egui::Id::new(item.id()), i, true, |ui, item_handle| {
+                                item_handle.ui(ui, |ui, handle, _state| {
+                                    ui.horizontal(|ui| {
+                                        ui.set_height(*row_height);
+                                        handle.ui(ui, |ui| {
+                                            if let Some(signal) = item
+                                                .signal_id()
+                                                .and_then(|id| viewer.waveform().signal(id))
+                                            {
+                                                if ui
+                                                    .selectable_label(
+                                                        focused_item == Some(item.id()),
+                                                        signal.name(),
+                                                    )
+                                                    .clicked()
+                                                {
+                                                    requested_focus = Some(item.id());
+                                                }
+                                            }
+                                        });
+                                    });
+                                })
+                            });
+                        }
+                    },
+                );
+            } else {
                 ui.horizontal(|ui| ui.set_height(25.0 + row_height_with_spacing * min_row as f32));
-                for (i, d) in wave_data
+                for item in displayed_items
                     .iter()
-                    .enumerate()
-                    .filter(|(_, d)| d.0.contains(&*search_text))
+                    .filter(|item| matches_search(item))
                     .take(max_row)
                     .skip(min_row)
                 {
-                    iter.next(ui, d.id(), i, true, |ui, item_handle| {
-                        item_handle.ui(ui, |ui, handle, state| {
-                            dragging |= state.dragged;
-                            ui.horizontal(|ui| {
-                                ui.set_height(*row_height);
-                                handle.ui(ui, |ui| {
-                                    ui.with_layout(Layout::top_down(egui::Align::Max), |ui| {
-                                        ui.horizontal_centered(|ui| {
-                                            ui.label(&d.0);
-                                        });
-                                    });
-                                });
-                            });
-                        })
+                    ui.horizontal(|ui| {
+                        ui.set_height(*row_height);
+                        if let Some(signal) =
+                            item.signal_id().and_then(|id| viewer.waveform().signal(id))
+                        {
+                            if ui
+                                .selectable_label(focused_item == Some(item.id()), signal.name())
+                                .clicked()
+                            {
+                                requested_focus = Some(item.id());
+                            }
+                        }
                     });
                 }
-            });
+            }
         });
+
+        if search_text != viewer.search() {
+            viewer.apply(ViewerCommand::SetSearch(search_text));
+        }
+        let new_order: Vec<_> = displayed_items.iter().map(DisplayedItem::id).collect();
+        if new_order != original_order {
+            viewer.apply(ViewerCommand::SetDisplayedOrder(new_order));
+        }
+        if let Some(id) = requested_focus {
+            viewer.apply(ViewerCommand::SetFocusedItem(id));
+        }
+
+        let mut pending_commands = Vec::new();
+        let mut active_measurement_start = viewer.cursor_state().measurement_start();
+        let persistent_cursor = viewer.cursor();
 
         egui::CentralPanel::default().show(root_ui, |ui| {
             // The central panel the region left after adding TopPanel's and SidePanel's
@@ -665,9 +677,15 @@ impl eframe::App for TemplateApp {
 
             let scroll_area = egui::ScrollArea::vertical().auto_shrink([false; 2]);
 
-            let filtered = wave_data
+            let filtered = viewer
+                .displayed_items()
                 .iter()
-                .filter(|(name, _)| name.contains(&*search_text))
+                .filter_map(|item| {
+                    let signal = item
+                        .signal_id()
+                        .and_then(|id| viewer.waveform().signal(id))?;
+                    signal.name().contains(viewer.search()).then_some(signal)
+                })
                 .collect::<Vec<_>>();
 
             let num_rows = filtered.len();
@@ -735,12 +753,12 @@ impl eframe::App for TemplateApp {
                             for d in filtered.iter().take(max_row).skip(min_row) {
                                 wave_dispatch::render_wave(
                                     ui,
-                                    &d.0,
+                                    d.name(),
                                     pixels_per_tick,
                                     view_start,
                                     view_end,
                                     *row_height,
-                                    &d.1,
+                                    d.signal(),
                                 );
                             }
                         });
@@ -751,7 +769,7 @@ impl eframe::App for TemplateApp {
                                 if let Some(x_frac) = x_frac {
                                     let anchor = time_viewport.start()
                                         + f64::from(x_frac) * time_viewport.span();
-                                    viewer.apply(ViewerCommand::ZoomTime {
+                                    pending_commands.push(ViewerCommand::ZoomTime {
                                         anchor,
                                         factor: f64::from(zoom),
                                     });
@@ -760,7 +778,7 @@ impl eframe::App for TemplateApp {
 
                             let scroll_x = ui.input(|i| i.smooth_scroll_delta.x);
                             if scroll_x != 0.0 {
-                                viewer.apply(ViewerCommand::PanTime(f64::from(
+                                pending_commands.push(ViewerCommand::PanTime(f64::from(
                                     -scroll_x / pixels_per_tick,
                                 )));
                             }
@@ -783,7 +801,18 @@ impl eframe::App for TemplateApp {
                     hover_t = Some(t_rounded as usize);
 
                     if wave_resp.drag_started() {
-                        *drag_time_start = hover_t;
+                        active_measurement_start = hover_t.map(|time| time as u64);
+                        if let Some(time) = hover_t {
+                            pending_commands.push(ViewerCommand::BeginMeasurement(time as u64));
+                        }
+                    } else if wave_resp.dragged() {
+                        if let Some(time) = hover_t {
+                            pending_commands.push(ViewerCommand::UpdateMeasurement(time as u64));
+                        }
+                    } else if wave_resp.clicked() {
+                        if let Some(time) = hover_t {
+                            pending_commands.push(ViewerCommand::SetCursor(time as u64));
+                        }
                     }
 
                     let rounded_x = rect.min.x + (t_rounded - view_start) * pixels_per_tick;
@@ -792,7 +821,7 @@ impl eframe::App for TemplateApp {
                     let stroke = Stroke::new(2.0_f32, yellow);
                     shapes.push(Shape::line_segment([p0, p1], stroke));
 
-                    if let Some(start_t) = *drag_time_start {
+                    if let Some(start_t) = active_measurement_start {
                         let rounded_x =
                             rect.min.x + (start_t as f32 - view_start) * pixels_per_tick;
                         let sp0 = pos2(rounded_x, max_rect.min.y + 0.0);
@@ -811,8 +840,22 @@ impl eframe::App for TemplateApp {
                     ui.painter().extend(shapes);
                 }
 
+                if let Some(cursor_time) = persistent_cursor {
+                    let cursor_x = rect.min.x + (cursor_time as f32 - view_start) * pixels_per_tick;
+                    if rect.x_range().contains(cursor_x) {
+                        ui.painter().line_segment(
+                            [
+                                pos2(cursor_x, max_rect.min.y),
+                                pos2(cursor_x, max_rect.max.y),
+                            ],
+                            Stroke::new(1.0, egui::Color32::LIGHT_BLUE),
+                        );
+                    }
+                }
+
                 if wave_resp.drag_stopped() {
-                    *drag_time_start = None;
+                    pending_commands.push(ViewerCommand::EndMeasurement);
+                    active_measurement_start = None;
                 }
 
                 let rect = egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), y_min..=16.0);
@@ -837,12 +880,13 @@ impl eframe::App for TemplateApp {
                         if i.abs_diff(t) <= gap / 2 {
                             used_i = t;
                             highlight = true;
-                            if let Some(st) = *drag_time_start {
+                            if let Some(st) = active_measurement_start {
                                 diff = Some((t as isize) - (st as isize))
                             }
                         }
                     }
-                    if let Some(t) = *drag_time_start {
+                    if let Some(t) = active_measurement_start {
+                        let t = t as usize;
                         if i.abs_diff(t) <= gap / 2 {
                             used_i = t;
                             highlight = true;
@@ -886,16 +930,40 @@ impl eframe::App for TemplateApp {
             });
         });
 
-        url_window.show(&ctx, download);
+        for command in pending_commands {
+            viewer.apply(command);
+        }
+
+        if let Some(url) = url_window.show(&ctx) {
+            for effect in viewer.apply(ViewerCommand::RequestOpenUrl(url)) {
+                if let EffectRequest::OpenUrl(url) = effect {
+                    let request = ehttp::Request::get(&url);
+                    let dl = download.clone();
+                    *dl.lock().unwrap() = Download::InProgress;
+                    let ctx2 = ctx.clone();
+                    ehttp::fetch(request, move |response| {
+                        *dl.lock().unwrap() = Download::Done(response);
+                        ctx2.request_repaint();
+                    });
+                    ctx.request_repaint();
+                }
+            }
+        }
         err_window.show(&ctx);
-        live.show(&ctx);
+        if let Some(url) = live.show(&ctx) {
+            for effect in viewer.apply(ViewerCommand::RequestLiveConnection(url)) {
+                if let EffectRequest::ConnectLive(url) = effect {
+                    live.connect(url, &ctx);
+                }
+            }
+        }
         if let Some(result) = live.poll() {
             match result {
                 Ok((signals, time)) => {
-                    *wave_data = mk_wave_data(signals);
-                    viewer.apply(ViewerCommand::ReplaceCapture {
-                        end_time: time.max(1),
-                        preserve_view: false,
+                    let preserve_view = !viewer.waveform().signals().is_empty();
+                    viewer.apply(ViewerCommand::ReplaceWaveform {
+                        waveform: mk_waveform(signals, time.max(1)),
+                        preserve_view,
                     });
                 }
                 Err(error) => {
@@ -918,8 +986,9 @@ impl eframe::App for TemplateApp {
     }
 }
 
-fn mk_wave_data(sigs: Vec<(vcd::ScopedVar, vcd::Signal)>) -> Vec<(String, vcd::Signal)> {
-    sigs.into_iter()
+fn mk_waveform(sigs: Vec<(vcd::ScopedVar, vcd::Signal)>, end_time: u64) -> Waveform {
+    let signals = sigs
+        .into_iter()
         .map(|(var, sig)| {
             let mut name: String =
                 itertools::intersperse(var.scopes.iter().map(|x| x.1.as_str()), ".").collect();
@@ -931,7 +1000,8 @@ fn mk_wave_data(sigs: Vec<(vcd::ScopedVar, vcd::Signal)>) -> Vec<(String, vcd::S
             // eprintln!("bools = {bools:?}");
             (name, sig)
         })
-        .collect()
+        .collect();
+    Waveform::new(signals, end_time)
 }
 
 impl TemplateApp {
@@ -978,17 +1048,15 @@ impl TemplateApp {
                 let mut file = std::fs::File::open(path).unwrap();
                 let mut buf_file = std::io::BufReader::new(&mut file);
                 let (sigs, time) = vcd::read_clocked_vcd(&mut buf_file).unwrap();
-                self.wave_data = mk_wave_data(sigs);
-                self.viewer.apply(ViewerCommand::ReplaceCapture {
-                    end_time: time,
+                self.viewer.apply(ViewerCommand::ReplaceWaveform {
+                    waveform: mk_waveform(sigs, time),
                     preserve_view: false,
                 });
             } else if let Some(bytes) = &self.dropped_files[0].bytes {
                 let mut cursor = std::io::Cursor::new(&bytes);
                 let (sigs, time) = vcd::read_clocked_vcd(&mut cursor).unwrap();
-                self.wave_data = mk_wave_data(sigs);
-                self.viewer.apply(ViewerCommand::ReplaceCapture {
-                    end_time: time,
+                self.viewer.apply(ViewerCommand::ReplaceWaveform {
+                    waveform: mk_waveform(sigs, time),
                     preserve_view: false,
                 });
             }

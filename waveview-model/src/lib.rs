@@ -3,5 +3,6 @@
 mod ids;
 pub mod vcd;
 pub mod viewer;
+pub mod waveform;
 
 pub use ids::{DisplayedItemId, SignalId};

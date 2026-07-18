@@ -34,13 +34,14 @@ Host-only `Runtime` state stays in `waveview`:
   operations.
 - [x] Define the initial `EffectRequest` vocabulary for file and network operations.
 - [x] Implement a pure reducer returning zero or more effects.
-- [ ] Make effect completion feed commands back into the same reducer.
-- [ ] Convert Reset, zoom, search, reorder, cursor measurement, and loaded-wave replacement first.
-  Reset, fit, zoom, horizontal pan, and loaded-wave replacement now use the command path; search,
-  reorder, and cursor measurement remain.
-- [ ] Convert remaining menu and mouse mutations.
-- [x] Add command-level tests for the initial viewport/cursor/capture slice without constructing an
-  egui context.
+- [x] Make file, URL, dropped-file, and live-load completion feed commands back into the same
+  reducer.
+- [x] Convert Reset, zoom, search, reorder, cursor measurement, and loaded-wave replacement first.
+- [x] Convert remaining domain-level menu and mouse mutations; purely presentational panel/dialog
+  state remains host-local.
+- [x] Add command-level tests for viewport, cursor/measurement, waveform replacement, stable
+  display identity, invalid ordering/focus, and display undo/redo without constructing an egui
+  context.
 
 Adding a `ViewerCommand` variant changes a type shared across the reload boundary and therefore
 requires a host restart. That is acceptable: hot reload optimizes UI implementation, not schema
@@ -53,6 +54,15 @@ development.
 - Viewport operations do not depend on egui scroll offsets.
 - Effects do not mutate `ViewerState` behind the reducer.
 - Commands are serializable where practical, so session files and scripting can share vocabulary.
+
+## Replacement policy
+
+- Opening a file or URL, dropping a file, and Reset fit the new capture and clear search/cursor
+  session state.
+- A subsequent live update preserves and clamps the current viewport; the first live snapshot fits
+  the capture.
+- Replacing a capture rebuilds displayed items with fresh capture-local stable IDs and clears the
+  display undo history, so focus cannot refer to the previous capture.
 
 ## Acceptance criteria
 

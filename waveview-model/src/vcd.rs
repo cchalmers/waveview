@@ -7,7 +7,7 @@ use std::hash::{Hash, Hasher};
 use std::collections::{btree_map, BTreeMap};
 // pub use vcd::Value;
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Signal {
     // index into the values
     ix: BTreeMap<u64, usize>,
@@ -59,7 +59,7 @@ pub enum Value {
     Z,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 enum SignalValues {
     // done in chunks of the signal width
     Values(Vec<Value>),

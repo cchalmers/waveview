@@ -27,10 +27,11 @@ impl Default for LiveVcd {
 }
 
 impl LiveVcd {
-    pub fn show(&mut self, ctx: &egui::Context) {
+    pub fn show(&mut self, ctx: &egui::Context) -> Option<String> {
         if !self.open {
-            return;
+            return None;
         }
+        let mut requested_url = None;
         let mut is_open = self.open;
         egui::Window::new("Live VCD")
             .open(&mut is_open)
@@ -41,19 +42,7 @@ impl LiveVcd {
                 ui.horizontal(|ui| {
                     if self.receiver.is_none() {
                         if ui.button("Connect").clicked() {
-                            let repaint = ctx.clone();
-                            match ewebsock::connect_with_wakeup(
-                                self.url.clone(),
-                                ewebsock::Options::default(),
-                                move || repaint.request_repaint(),
-                            ) {
-                                Ok((sender, receiver)) => {
-                                    self.sender = Some(sender);
-                                    self.receiver = Some(receiver);
-                                    self.status = "connecting".to_owned();
-                                }
-                                Err(error) => self.status = format!("connection failed: {error}"),
-                            }
+                            requested_url = Some(self.url.clone());
                         }
                     } else if ui.button("Disconnect").clicked() {
                         self.disconnect("disconnected");
@@ -63,6 +52,24 @@ impl LiveVcd {
                 ui.small(format!("buffered: {} KiB", self.bytes.len() / 1024));
             });
         self.open = is_open;
+        requested_url
+    }
+
+    pub fn connect(&mut self, url: String, ctx: &egui::Context) {
+        self.url = url;
+        let repaint = ctx.clone();
+        match ewebsock::connect_with_wakeup(
+            self.url.clone(),
+            ewebsock::Options::default(),
+            move || repaint.request_repaint(),
+        ) {
+            Ok((sender, receiver)) => {
+                self.sender = Some(sender);
+                self.receiver = Some(receiver);
+                self.status = "connecting".to_owned();
+            }
+            Err(error) => self.status = format!("connection failed: {error}"),
+        }
     }
 
     pub fn poll(&mut self) -> Option<Result<ParsedVcd, String>> {
