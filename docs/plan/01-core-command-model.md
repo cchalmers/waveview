@@ -30,13 +30,15 @@ Host-only `Runtime` state stays in `waveview`:
 
 ## Command path
 
-- [ ] Define `ViewerCommand` for synchronous model operations.
-- [ ] Define `EffectRequest` for file/network/persistence/clipboard operations.
-- [ ] Implement a pure reducer returning zero or more effects.
+- [x] Define the initial `ViewerCommand` vocabulary for capture, viewport, cursor, and effect
+  operations.
+- [x] Define the initial `EffectRequest` vocabulary for file and network operations.
+- [x] Implement a pure reducer returning zero or more effects.
 - [ ] Make effect completion feed commands back into the same reducer.
 - [ ] Convert Reset, zoom, search, reorder, cursor measurement, and loaded-wave replacement first.
 - [ ] Convert remaining menu and mouse mutations.
-- [ ] Add command-level tests without constructing an egui context.
+- [x] Add command-level tests for the initial viewport/cursor/capture slice without constructing an
+  egui context.
 
 Adding a `ViewerCommand` variant changes a type shared across the reload boundary and therefore
 requires a host restart. That is acceptable: hot reload optimizes UI implementation, not schema
