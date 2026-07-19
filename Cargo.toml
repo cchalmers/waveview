@@ -7,7 +7,13 @@ edition = "2021"
 rust-version = "1.92"
 
 [workspace]
-members = ["waveserve", "waveview-model", "waveview-ui", "waveview-ui-reload"]
+members = [
+    "eprompt",
+    "waveserve",
+    "waveview-model",
+    "waveview-ui",
+    "waveview-ui-reload",
+]
 default-members = ["."]
 resolver = "2"
 
