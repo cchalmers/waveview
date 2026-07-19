@@ -85,6 +85,9 @@ move its dirty worktree or retain its websocket/backend coupling.
   now use the same reloadable dylib. The stable host retains raw event collection and effects.
 - The activity icon and available-signal header/tree are reloadable. Their host-owned panel,
   `TextEdit`, `ScrollArea`, expansion set, and waveform/display state survive library replacement.
+- The waveform canvas now reloads as one component: visible row composition, hover line, persistent
+  cursor, measurement drag/overlay, wheel zoom, and horizontal pan. The host retains only the
+  vertical `ScrollArea`, virtualization range, and durable viewer state.
 - The reload runner reports building/failure state inside the viewer and leaves the last valid dylib
   active after a compilation error. Host/shared/ABI edits produce a sticky restart-required status;
   Vim behavior and shared Vim state live in separate files so the watcher boundary is explicit.

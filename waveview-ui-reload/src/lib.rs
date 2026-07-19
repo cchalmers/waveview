@@ -3,7 +3,6 @@
 use eframe::egui;
 use std::collections::HashSet;
 use waveview_model::search::SearchMatcher;
-use waveview_model::vcd;
 use waveview_model::viewer::ViewerCommand;
 use waveview_model::viewer::ViewerState;
 use waveview_model::vim::{VimInput, VimState};
@@ -70,23 +69,23 @@ pub fn timeline_height() -> f32 {
 }
 
 #[unsafe(no_mangle)]
-pub fn render_wave(
+pub fn render_wave_canvas(
     ui: &mut egui::Ui,
-    name: &str,
-    pixels_per_tick: f32,
-    view_start: f32,
-    view_end: f32,
-    height: f32,
-    signal: &vcd::Signal,
+    viewer: &ViewerState,
+    canvas_rect: egui::Rect,
+    interaction_rect: egui::Rect,
+    visible_rows: std::ops::Range<usize>,
+    row_height: f32,
+    commands: &mut Vec<ViewerCommand>,
 ) {
-    waveview_ui::render_wave(
+    waveview_ui::render_wave_canvas(
         ui,
-        name,
-        pixels_per_tick,
-        view_start,
-        view_end,
-        height,
-        signal,
+        viewer,
+        canvas_rect,
+        interaction_rect,
+        visible_rows,
+        row_height,
+        commands,
     );
 }
 

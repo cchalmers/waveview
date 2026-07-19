@@ -991,8 +991,6 @@ impl eframe::App for TemplateApp {
         }
 
         let mut pending_commands = Vec::new();
-        let mut active_measurement_start = viewer.cursor_state().measurement_start();
-        let persistent_cursor = viewer.cursor();
 
         egui::CentralPanel::default().show(root_ui, |ui| {
             let time_viewport = viewer.viewport();
@@ -1067,8 +1065,6 @@ impl eframe::App for TemplateApp {
 
                 let rect = egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), y_min..=y_max);
 
-                let view_start = time_viewport.start() as f32;
-                let view_end = time_viewport.end() as f32;
                 let pixels_per_tick = rect.width() / time_viewport.span() as f32;
 
                 info.rect = rect;
@@ -1077,124 +1073,17 @@ impl eframe::App for TemplateApp {
                 info.viewport = viewport;
                 info.pixels_per_tick = pixels_per_tick;
 
-                let wave_resp = ui
-                    .scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
-                        ui.skip_ahead_auto_ids(min_row); // Make sure we get consistent IDs.
-                        let resp = ui.interact(
-                            max_rect,
-                            egui::Id::new("ui_hover"),
-                            // if I change this to hover, I can click and drag to move waves around
-                            egui::Sense::click_and_drag(),
-                            // egui::Sense::hover(),
-                            // egui::Sense::
-                        );
-                        let hover_pos = resp.hover_pos();
-
-                        let x_frac = hover_pos
-                            .map(|hover_pos| (hover_pos.x - min_rect.min.x) / min_rect.width());
-                        // let x_val = x_frac.map(|x_frac| {
-                        //     (viewport.min.x + x_frac * (viewport.max.x - viewport.min.x))
-                        //         / 32.0
-                        //         / *x_scale
-                        // });
-                        ui.vertical(|ui| {
-                            for d in filtered.iter().take(max_row).skip(min_row) {
-                                wave_dispatch::render_wave(
-                                    ui,
-                                    d.name(),
-                                    pixels_per_tick,
-                                    view_start,
-                                    view_end,
-                                    *row_height,
-                                    d.signal(),
-                                );
-                            }
-                        });
-
-                        if ui.rect_contains_pointer(egui::Rect::EVERYTHING) {
-                            let zoom = ui.input(|i| i.zoom_delta());
-                            if zoom != 1.0 {
-                                if let Some(x_frac) = x_frac {
-                                    let anchor = time_viewport.start()
-                                        + f64::from(x_frac) * time_viewport.span();
-                                    pending_commands.push(ViewerCommand::ZoomTime {
-                                        anchor,
-                                        factor: f64::from(zoom),
-                                    });
-                                }
-                            }
-
-                            let scroll_x = ui.input(|i| i.smooth_scroll_delta.x);
-                            if scroll_x != 0.0 {
-                                pending_commands.push(ViewerCommand::PanTime(f64::from(
-                                    -scroll_x / pixels_per_tick,
-                                )));
-                            }
-                        }
-                        resp
-                    })
-                    .inner;
-
-                let yellow = egui::Color32::from_rgb(0xd2, 0x99, 0x1d);
-
-                if let Some(pos) = &wave_resp.hover_pos() {
-                    use egui::*;
-                    let mut shapes = vec![];
-                    // let color = Color32::from_additive_luminance(196);
-
-                    let x = pos.x;
-                    let t = view_start + (x - rect.min.x) / pixels_per_tick;
-                    let t_rounded = t.round();
-                    let hover_t = t_rounded as u64;
-
-                    if wave_resp.drag_started() {
-                        active_measurement_start = Some(hover_t);
-                        pending_commands.push(ViewerCommand::BeginMeasurement(hover_t));
-                    } else if wave_resp.dragged() {
-                        pending_commands.push(ViewerCommand::UpdateMeasurement(hover_t));
-                    } else if wave_resp.clicked() {
-                        pending_commands.push(ViewerCommand::SetCursor(hover_t));
-                    }
-
-                    let rounded_x = rect.min.x + (t_rounded - view_start) * pixels_per_tick;
-                    let p0 = pos2(rounded_x, max_rect.min.y + 0.0);
-                    let p1 = pos2(rounded_x, max_rect.max.y);
-                    let stroke = Stroke::new(2.0_f32, yellow);
-                    shapes.push(Shape::line_segment([p0, p1], stroke));
-
-                    if let Some(start_t) = active_measurement_start {
-                        let rounded_x =
-                            rect.min.x + (start_t as f32 - view_start) * pixels_per_tick;
-                        let sp0 = pos2(rounded_x, max_rect.min.y + 0.0);
-                        let sp1 = pos2(rounded_x, max_rect.max.y);
-                        let stroke = Stroke::new(2.0_f32, yellow);
-                        shapes.push(Shape::line_segment([sp0, sp1], stroke));
-                        let pp0 = pos2(rounded_x, max_rect.min.y);
-                        shapes.push(Shape::rect_filled(
-                            egui::Rect::from_two_pos(pp0, p1),
-                            egui::CornerRadius::ZERO,
-                            yellow.linear_multiply(0.1),
-                        ));
-                    }
-                    ui.painter().extend(shapes);
-                }
-
-                if let Some(cursor_time) = persistent_cursor {
-                    let cursor_x = rect.min.x + (cursor_time as f32 - view_start) * pixels_per_tick;
-                    if rect.x_range().contains(cursor_x) {
-                        ui.painter().line_segment(
-                            [
-                                pos2(cursor_x, max_rect.min.y),
-                                pos2(cursor_x, max_rect.max.y),
-                            ],
-                            Stroke::new(1.0, egui::Color32::LIGHT_BLUE),
-                        );
-                    }
-                }
-
-                if wave_resp.drag_stopped() {
-                    pending_commands.push(ViewerCommand::EndMeasurement);
-                }
+                ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+                    wave_dispatch::render_wave_canvas(
+                        ui,
+                        viewer,
+                        rect,
+                        max_rect,
+                        min_row..max_row,
+                        *row_height,
+                        &mut pending_commands,
+                    );
+                });
             });
         });
 
