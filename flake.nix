@@ -119,15 +119,96 @@
           name = "reload-waveview";
           runtimeInputs = [ rustToolchain pkgs.entr pkgs.findutils ];
           text = ''
-            cargo build -p waveview-ui-reload
-            while true; do
-              find waveview-ui waveview-ui-reload waveview-model eprompt timeline -type f \
-                \( -name '*.rs' -o -name Cargo.toml \) \
-                | entr -dnp cargo build -p waveview-ui-reload \
-                || true
-            done &
-            watcher_pid=$!
-            trap 'kill "$watcher_pid" 2>/dev/null || true' EXIT INT TERM
+            status_file="''${TMPDIR:-/tmp}/waveview-reload-status-$$"
+            export WAVEVIEW_RELOAD_STATUS_FILE="$status_file"
+            printf building > "$status_file"
+            if cargo build -p waveview-ui-reload; then
+              printf ready > "$status_file"
+            else
+              printf failed > "$status_file"
+              exit 1
+            fi
+            watch_reload() {
+              reload_entr_pid=
+              trap '
+                if [ -n "$reload_entr_pid" ]; then
+                  kill "$reload_entr_pid" 2>/dev/null || true
+                  wait "$reload_entr_pid" 2>/dev/null || true
+                fi
+                exit 0
+              ' INT TERM
+              while true; do
+                # Status variables are expanded by the child shell passed to `sh -c`.
+                # shellcheck disable=SC2016
+                {
+                  find waveview-ui eprompt timeline -type f \
+                    \( -name '*.rs' -o -name Cargo.toml \)
+                  printf '%s\n' waveview-model/src/vim.rs
+                } | entr -dnp sh -c '
+                  build_pid=
+                  cleanup_build() {
+                    if [ -n "''${build_pid:-}" ]; then
+                      kill "$build_pid" 2>/dev/null || true
+                      wait "$build_pid" 2>/dev/null || true
+                    fi
+                  }
+                  trap "cleanup_build; exit 143" INT TERM
+                  if [ "$(cat "$WAVEVIEW_RELOAD_STATUS_FILE" 2>/dev/null || true)" != restart ]; then
+                    printf building > "$WAVEVIEW_RELOAD_STATUS_FILE"
+                  fi
+                  cargo build -p waveview-ui-reload &
+                  build_pid=$!
+                  if wait "$build_pid"; then
+                    next=ready
+                  else
+                    next=failed
+                  fi
+                  build_pid=
+                  if [ "$(cat "$WAVEVIEW_RELOAD_STATUS_FILE" 2>/dev/null || true)" != restart ]; then
+                    printf %s "$next" > "$WAVEVIEW_RELOAD_STATUS_FILE"
+                  fi
+                ' &
+                reload_entr_pid=$!
+                wait "$reload_entr_pid" || true
+                reload_entr_pid=
+              done
+            }
+            watch_reload &
+            reload_watcher_pid=$!
+
+            watch_restart_required() {
+              restart_entr_pid=
+              trap '
+                if [ -n "$restart_entr_pid" ]; then
+                  kill "$restart_entr_pid" 2>/dev/null || true
+                  wait "$restart_entr_pid" 2>/dev/null || true
+                fi
+                exit 0
+              ' INT TERM
+              while true; do
+                # Status variables are expanded by the child shell passed to `sh -c`.
+                # shellcheck disable=SC2016
+                {
+                  find src waveview-ui-reload waveview-model -type f \
+                    \( -name '*.rs' -o -name Cargo.toml \) \
+                    ! -path waveview-model/src/vim.rs
+                  printf '%s\n' Cargo.toml Cargo.lock flake.nix
+                } | entr -dnp sh -c 'printf restart > "$WAVEVIEW_RELOAD_STATUS_FILE"' &
+                restart_entr_pid=$!
+                wait "$restart_entr_pid" || true
+                restart_entr_pid=
+              done
+            }
+            watch_restart_required &
+            restart_watcher_pid=$!
+
+            cleanup() {
+              trap - EXIT INT TERM
+              kill "$reload_watcher_pid" "$restart_watcher_pid" 2>/dev/null || true
+              wait "$reload_watcher_pid" "$restart_watcher_pid" 2>/dev/null || true
+              rm -f "$status_file"
+            }
+            trap cleanup EXIT INT TERM
             cargo run --features reload -- "$@"
           '';
         };

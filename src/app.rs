@@ -7,7 +7,7 @@ use waveview_model::search::{SearchHistory, SearchMatcher};
 use waveview_model::viewer::{
     DisplayedItem, EffectRequest, FocusPlacement, ViewerCommand, ViewerState,
 };
-use waveview_model::vim::{VimInput, VimState, NORMAL_BINDINGS};
+use waveview_model::vim::{VimInput, VimState};
 use waveview_model::waveform::Waveform;
 
 use std::sync::atomic::AtomicBool;
@@ -454,7 +454,15 @@ impl eframe::App for TemplateApp {
                     ctx.memory_mut(|memory| memory.surrender_focus(focused));
                 }
             }
-            for command in vim.handle(input, keyboard_captured, viewer) {
+            let mut vim_commands = Vec::new();
+            wave_dispatch::handle_vim_input(
+                vim,
+                input,
+                keyboard_captured,
+                viewer,
+                &mut vim_commands,
+            );
+            for command in vim_commands {
                 reveal_keyboard_focus |= matches!(
                     command,
                     ViewerCommand::SetFocusedItem(_)
@@ -631,17 +639,7 @@ impl eframe::App for TemplateApp {
             .open(show_key_help)
             .resizable(true)
             .show(&ctx, |ui| {
-                egui::Grid::new("vim_key_help")
-                    .num_columns(2)
-                    .spacing(egui::vec2(24.0, 6.0))
-                    .striped(true)
-                    .show(ui, |ui| {
-                        for binding in NORMAL_BINDINGS {
-                            ui.monospace(binding.keys);
-                            ui.label(binding.description);
-                            ui.end_row();
-                        }
-                    });
+                wave_dispatch::render_key_help(ui);
             });
 
         // if *show_info {
@@ -687,24 +685,17 @@ impl eframe::App for TemplateApp {
         let mut displayed_items = viewer.displayed_items().to_vec();
         let mut requested_focus = None;
         let timeline_height = wave_dispatch::timeline_height();
+        let reload_status = wave_dispatch::reload_status();
 
         egui::Panel::bottom("vim_status").show(root_ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.monospace(vim.mode().label());
-                let pending = vim.pending_display();
-                if !pending.is_empty() {
-                    ui.separator();
-                    ui.monospace(pending);
-                }
-                if let Some(message) = status_message.as_deref() {
-                    ui.separator();
-                    ui.label(message);
-                    ui.ctx()
-                        .request_repaint_after(std::time::Duration::from_secs_f64(
-                            (*status_expires_at - now).max(0.0),
-                        ));
-                }
-            });
+            let message = reload_status.as_deref().or(status_message.as_deref());
+            wave_dispatch::render_vim_status(ui, vim, message);
+            if status_message.is_some() {
+                ui.ctx()
+                    .request_repaint_after(std::time::Duration::from_secs_f64(
+                        (*status_expires_at - now).max(0.0),
+                    ));
+            }
         });
 
         if let Some((placement, count)) = keyboard_select_visible {
@@ -865,24 +856,13 @@ impl eframe::App for TemplateApp {
                                             .signal_id()
                                             .and_then(|id| viewer.waveform().signal(id))
                                         {
-                                            let size =
-                                                egui::vec2(ui.available_width(), *row_height);
-                                            let text = highlighted_signal_name(
+                                            if wave_dispatch::render_signal_button(
                                                 ui,
                                                 signal.name(),
+                                                *row_height,
+                                                focused_item == Some(item.id()),
                                                 search_matcher.as_ref(),
-                                            );
-                                            if ui
-                                                .add_sized(
-                                                    size,
-                                                    egui::Button::selectable(
-                                                        focused_item == Some(item.id()),
-                                                        text,
-                                                    )
-                                                    .truncate(),
-                                                )
-                                                .clicked()
-                                            {
+                                            ) {
                                                 requested_focus = Some(item.id());
                                             }
                                         }
@@ -1193,39 +1173,6 @@ fn mk_waveform(sigs: Vec<(vcd::ScopedVar, vcd::Signal)>, end_time: u64) -> Wavef
         })
         .collect();
     Waveform::new(signals, end_time)
-}
-
-fn highlighted_signal_name(
-    ui: &egui::Ui,
-    name: &str,
-    matcher: Option<&SearchMatcher>,
-) -> egui::WidgetText {
-    let Some(matcher) = matcher else {
-        return egui::WidgetText::from(name.to_owned());
-    };
-    let ranges = matcher.ranges(name).collect::<Vec<_>>();
-    if ranges.is_empty() {
-        return egui::WidgetText::from(name.to_owned());
-    }
-
-    let normal = egui::TextFormat {
-        font_id: egui::TextStyle::Button.resolve(ui.style()),
-        color: ui.visuals().text_color(),
-        ..Default::default()
-    };
-    let matched = egui::TextFormat {
-        background: egui::Color32::DARK_GREEN,
-        ..normal.clone()
-    };
-    let mut job = egui::text::LayoutJob::default();
-    let mut end = 0;
-    for range in ranges {
-        job.append(&name[end..range.start], 0.0, normal.clone());
-        job.append(&name[range.clone()], 0.0, matched.clone());
-        end = range.end;
-    }
-    job.append(&name[end..], 0.0, normal);
-    job.into()
 }
 
 fn focus_first_search_match(viewer: &mut ViewerState) -> bool {

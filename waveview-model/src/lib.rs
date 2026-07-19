@@ -5,6 +5,7 @@ pub mod search;
 pub mod vcd;
 pub mod viewer;
 pub mod vim;
+mod vim_types;
 pub mod waveform;
 
 pub use ids::{DisplayedItemId, SignalId};

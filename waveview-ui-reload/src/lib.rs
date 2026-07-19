@@ -1,8 +1,43 @@
 #![warn(clippy::all, rust_2018_idioms)]
 
 use eframe::egui;
+use waveview_model::search::SearchMatcher;
 use waveview_model::vcd;
 use waveview_model::viewer::ViewerCommand;
+use waveview_model::viewer::ViewerState;
+use waveview_model::vim::{VimInput, VimState};
+
+#[unsafe(no_mangle)]
+pub fn handle_vim_input(
+    vim: &mut VimState,
+    input: VimInput,
+    keyboard_captured: bool,
+    viewer: &ViewerState,
+    commands: &mut Vec<ViewerCommand>,
+) {
+    waveview_ui::handle_vim_input(vim, input, keyboard_captured, viewer, commands);
+}
+
+#[unsafe(no_mangle)]
+pub fn render_signal_button(
+    ui: &mut egui::Ui,
+    name: &str,
+    height: f32,
+    selected: bool,
+    matcher: Option<&SearchMatcher>,
+) -> bool {
+    waveview_ui::render_signal_button(ui, name, height, selected, matcher)
+}
+
+#[unsafe(no_mangle)]
+pub fn render_vim_status(ui: &mut egui::Ui, vim: &VimState, message: Option<&str>) {
+    waveview_ui::render_vim_status(ui, vim, message);
+}
+
+#[unsafe(no_mangle)]
+pub fn render_key_help(ui: &mut egui::Ui) {
+    waveview_ui::render_key_help(ui);
+}
 
 #[unsafe(no_mangle)]
 pub fn timeline_height() -> f32 {

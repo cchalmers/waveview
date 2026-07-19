@@ -1,49 +1,12 @@
 use crate::search::SearchMatcher;
 use crate::viewer::{FocusPlacement, ViewerCommand, ViewerState};
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum VimInput {
-    Char(char),
-    Ctrl(char),
-    Escape,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum VimMode {
-    Normal,
-}
+use crate::vim_types::RepeatableChange;
+pub use crate::vim_types::{VimInput, VimMode, VimState};
 
 impl VimMode {
     pub fn label(self) -> &'static str {
         match self {
             Self::Normal => "NORMAL",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum RepeatableChange {
-    MoveFocused(isize),
-    RemoveFocused,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct VimState {
-    mode: VimMode,
-    count: Option<usize>,
-    pending: String,
-    last_change: Option<RepeatableChange>,
-    repeating_zoom: Option<bool>,
-}
-
-impl Default for VimState {
-    fn default() -> Self {
-        Self {
-            mode: VimMode::Normal,
-            count: None,
-            pending: String::new(),
-            last_change: None,
-            repeating_zoom: None,
         }
     }
 }

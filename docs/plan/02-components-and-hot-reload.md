@@ -59,8 +59,10 @@ move its dirty worktree or retain its websocket/backend coupling.
 - [x] Watch `waveview-ui`, `eprompt`, and `timeline` sources.
 - [x] Rebuild only the UI dylib/shim target.
 - [x] Repaint immediately after successful reload.
-- [ ] Keep the previous dylib active and surface a nonfatal status when compilation fails.
-- [ ] Measure incremental builds and only consider another dylib if the normal edit cycle exceeds
+- [x] Keep the previous dylib active and surface a nonfatal status when compilation fails.
+- [x] Detect stable-host, shared-layout, and ABI-shim edits and show a sticky restart-required
+  status instead of attempting an unsafe reload.
+- [x] Measure incremental builds and only consider another dylib if the normal edit cycle exceeds
   the agreed target on representative changes.
 
 ## Acceptance criteria
@@ -79,3 +81,10 @@ move its dirty worktree or retain its websocket/backend coupling.
   cursor/selection/mark painting, generic navigation actions, mapping tests, and a standalone demo.
 - Waveview's timeline now renders through the single UI dylib and maps generic timeline actions to
   `ViewerCommand`; static builds call the identical implementation directly.
+- Vim command interpretation, signal-name/search painting, mode status, and generated keyboard help
+  now use the same reloadable dylib. The stable host retains raw event collection and effects.
+- The reload runner reports building/failure state inside the viewer and leaves the last valid dylib
+  active after a compilation error. Host/shared/ABI edits produce a sticky restart-required status;
+  Vim behavior and shared Vim state live in separate files so the watcher boundary is explicit.
+- A representative `waveview-ui` edit rebuilt the dylib in 0.16 seconds of Cargo time (2.73 seconds
+  end-to-end including `nix develop` startup), so another dylib is not justified.
