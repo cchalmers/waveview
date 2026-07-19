@@ -8,7 +8,7 @@ use waveview_model::ui_types::{
     MarkPresentation, MenuAction, SignalMenuAction, SignalPresentation, TimelinePresentation,
 };
 use waveview_model::viewer::{
-    DisplayedItem, EffectRequest, FocusPlacement, ViewerCommand, ViewerState,
+    DisplayedItem, EffectRequest, FocusPlacement, ViewerCommand, ViewerState, VisualSelectionKind,
 };
 use waveview_model::vim::{VimInput, VimState};
 use waveview_model::waveform::Waveform;
@@ -293,6 +293,30 @@ impl TemplateApp {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn control_open_bracket_is_escape() {
+        let modifiers = egui::Modifiers {
+            ctrl: true,
+            ..Default::default()
+        };
+        let event = egui::Event::Key {
+            key: egui::Key::OpenBracket,
+            physical_key: Some(egui::Key::OpenBracket),
+            pressed: true,
+            repeat: false,
+            modifiers,
+        };
+        assert_eq!(
+            vim_input_for_event(&event, modifiers),
+            Some(VimInput::Escape)
+        );
+    }
+}
+
 pub enum Download {
     None,
     InProgress,
@@ -403,6 +427,27 @@ impl eframe::App for TemplateApp {
     /// Called each time the UI needs repainting, which may be many times per second.
     fn ui(&mut self, root_ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = root_ui.ctx().clone();
+        let (mouse_moved, keyboard_used) = ctx.input(|input| {
+            let keyboard_used = input.events.iter().any(|event| {
+                matches!(
+                    event,
+                    egui::Event::Key { pressed: true, .. }
+                        | egui::Event::Text(_)
+                        | egui::Event::Paste(_)
+                        | egui::Event::Copy
+                        | egui::Event::Cut
+                )
+            });
+            (input.pointer.delta() != egui::Vec2::ZERO, keyboard_used)
+        });
+        if mouse_moved || keyboard_used {
+            ctx.data_mut(|data| {
+                data.insert_temp(
+                    mouse_time_cursor_visibility_id(),
+                    mouse_moved || !keyboard_used,
+                );
+            });
+        }
         let Self {
             viewer,
             y_offset,
@@ -430,6 +475,7 @@ impl eframe::App for TemplateApp {
             expanded_signal_scopes,
         } = self;
         let now = ctx.input(|input| input.time);
+        vim.sync_with_viewer(viewer);
         if status_message.is_some() && now >= *status_expires_at {
             *status_message = None;
         }
@@ -651,7 +697,11 @@ impl eframe::App for TemplateApp {
                         }
                         EffectRequest::CopyText(text) => {
                             ctx.copy_text(text.clone());
-                            *status_message = Some(format!("copied {text}"));
+                            *status_message = Some(if text.contains('\n') || text.contains('\t') {
+                                "copied selection".to_owned()
+                            } else {
+                                format!("copied {text}")
+                            });
                             *status_expires_at = now + 2.0;
                             ctx.request_repaint();
                         }
@@ -1143,9 +1193,11 @@ impl eframe::App for TemplateApp {
                                                     SignalPresentation {
                                                         value_format: item.value_format(),
                                                         color: item.color(),
+                                                        focused: focused_item == Some(item.id()),
+                                                        visually_selected: viewer
+                                                            .item_is_visually_selected(item.id()),
                                                     },
                                                     *row_height,
-                                                    focused_item == Some(item.id()),
                                                     search_matcher.as_ref(),
                                                 );
                                             if signal_response.clicked()
@@ -1239,7 +1291,16 @@ impl eframe::App for TemplateApp {
                     view_start: time_viewport.start().floor().max(0.0) as u64,
                     view_end: time_viewport.end().ceil().max(1.0) as u64,
                     cursor: viewer.cursor(),
-                    measurement_start: viewer.cursor_state().measurement_start(),
+                    measurement_start: viewer
+                        .visual_selection()
+                        .filter(|selection| {
+                            matches!(
+                                selection.kind(),
+                                VisualSelectionKind::Time | VisualSelectionKind::Block
+                            )
+                        })
+                        .map(|selection| selection.anchor().time())
+                        .or_else(|| viewer.cursor_state().measurement_start()),
                 },
                 &mark_presentations,
                 &mut pending_commands,
@@ -1549,6 +1610,12 @@ fn vim_input_for_event(event: &egui::Event, modifiers: egui::Modifiers) -> Optio
             ..
         } => Some(VimInput::Escape),
         egui::Event::Key {
+            key: egui::Key::OpenBracket,
+            pressed: true,
+            modifiers,
+            ..
+        } if modifiers.ctrl => Some(VimInput::Escape),
+        egui::Event::Key {
             key,
             pressed: true,
             modifiers,
@@ -1574,6 +1641,10 @@ fn command_prompt_id() -> egui::Id {
     egui::Id::new("command_prompt_input")
 }
 
+fn mouse_time_cursor_visibility_id() -> egui::Id {
+    egui::Id::new("waveview_mouse_time_cursor_visible")
+}
+
 fn ctrl_key_character(key: egui::Key) -> Option<char> {
     match key {
         egui::Key::B => Some('b'),
@@ -1584,6 +1655,7 @@ fn ctrl_key_character(key: egui::Key) -> Option<char> {
         egui::Key::O => Some('o'),
         egui::Key::R => Some('r'),
         egui::Key::U => Some('u'),
+        egui::Key::V => Some('v'),
         egui::Key::Y => Some('y'),
         _ => None,
     }

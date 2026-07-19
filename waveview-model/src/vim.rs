@@ -1,5 +1,7 @@
 use crate::search::SearchMatcher;
-use crate::viewer::{FocusPlacement, MarkJumpTarget, ViewerCommand, ViewerState};
+use crate::viewer::{
+    FocusPlacement, MarkJumpTarget, ViewerCommand, ViewerState, VisualSelectionKind,
+};
 use crate::vim_types::RepeatableChange;
 pub use crate::vim_types::{VimInput, VimMode, VimState};
 
@@ -7,6 +9,9 @@ impl VimMode {
     pub fn label(self) -> &'static str {
         match self {
             Self::Normal => "NORMAL",
+            Self::Visual => "VISUAL",
+            Self::VisualLine => "VISUAL LINE",
+            Self::VisualBlock => "VISUAL BLOCK",
         }
     }
 }
@@ -14,6 +19,19 @@ impl VimMode {
 impl VimState {
     pub fn mode(&self) -> VimMode {
         self.mode
+    }
+
+    pub fn sync_with_viewer(&mut self, viewer: &ViewerState) {
+        let previous_mode = self.mode;
+        self.mode = match viewer.visual_selection().map(|selection| selection.kind()) {
+            Some(VisualSelectionKind::Time) => VimMode::Visual,
+            Some(VisualSelectionKind::Lines) => VimMode::VisualLine,
+            Some(VisualSelectionKind::Block) => VimMode::VisualBlock,
+            None => VimMode::Normal,
+        };
+        if previous_mode != VimMode::Normal && self.mode == VimMode::Normal {
+            self.cancel();
+        }
     }
 
     pub fn pending_display(&self) -> String {
@@ -39,7 +57,13 @@ impl VimState {
     ) -> Vec<ViewerCommand> {
         if input == VimInput::Escape {
             self.cancel();
-            return Vec::new();
+            if self.mode != VimMode::Normal {
+                self.mode = VimMode::Normal;
+                return vec![ViewerCommand::ClearVisualSelection];
+            }
+            return viewer
+                .visual_selection()
+                .map_or_else(Vec::new, |_| vec![ViewerCommand::ClearVisualSelection]);
         }
         if keyboard_captured {
             return Vec::new();
@@ -53,6 +77,37 @@ impl VimState {
     }
 
     fn handle_char(&mut self, character: char, viewer: &ViewerState) -> Vec<ViewerCommand> {
+        if self.mode != VimMode::Normal {
+            match character {
+                'v' => return self.enter_visual(VisualSelectionKind::Time),
+                'V' => return self.enter_visual(VisualSelectionKind::Lines),
+                'o' => {
+                    self.cancel();
+                    return vec![ViewerCommand::SwapVisualSelectionEnds];
+                }
+                'y' => {
+                    self.cancel();
+                    self.mode = VimMode::Normal;
+                    return vec![ViewerCommand::CopyVisualSelection];
+                }
+                'd' if self.mode == VimMode::VisualLine => {
+                    self.cancel();
+                    self.mode = VimMode::Normal;
+                    let Some(range) = viewer.visual_item_range() else {
+                        return vec![ViewerCommand::ClearVisualSelection];
+                    };
+                    let ids = viewer.displayed_items()[range]
+                        .iter()
+                        .map(|item| item.id())
+                        .collect();
+                    return vec![
+                        ViewerCommand::ClearVisualSelection,
+                        ViewerCommand::RemoveDisplayedItems(ids),
+                    ];
+                }
+                _ => {}
+            }
+        }
         if let Some(zoom_in) = self.repeating_zoom.take() {
             let repeated_key = if zoom_in { 'i' } else { 'o' };
             if character == repeated_key {
@@ -109,6 +164,8 @@ impl VimState {
                 self.cancel();
                 vec![ViewerCommand::CopyFocusedName]
             }
+            'v' => self.enter_visual(VisualSelectionKind::Time),
+            'V' => self.enter_visual(VisualSelectionKind::Lines),
             '/' => {
                 self.cancel();
                 vec![ViewerCommand::BeginSearch]
@@ -160,6 +217,9 @@ impl VimState {
     }
 
     fn handle_ctrl(&mut self, character: char, viewer: &ViewerState) -> Vec<ViewerCommand> {
+        if character.eq_ignore_ascii_case(&'v') {
+            return self.enter_visual(VisualSelectionKind::Block);
+        }
         self.repeating_zoom = None;
         let count = self.take_count();
         let span = viewer.viewport().span();
@@ -181,6 +241,14 @@ impl VimState {
         let pending = std::mem::take(&mut self.pending);
         match (pending.as_str(), character) {
             ("g", 'g') => self.focus_absolute(viewer, true),
+            ("g", 'v') => {
+                self.count = None;
+                let Some(selection) = viewer.last_visual_selection() else {
+                    return Vec::new();
+                };
+                self.mode = mode_for_visual_kind(selection.kind());
+                vec![ViewerCommand::RestoreVisualSelection]
+            }
             ("d", 'd') => {
                 let count = self.take_count();
                 self.repeatable(viewer, RepeatableChange::RemoveFocused(count))
@@ -243,7 +311,25 @@ impl VimState {
         self.count.take().unwrap_or(1).max(1)
     }
 
+    fn enter_visual(&mut self, kind: VisualSelectionKind) -> Vec<ViewerCommand> {
+        self.cancel();
+        let mode = mode_for_visual_kind(kind);
+        if self.mode == mode {
+            self.mode = VimMode::Normal;
+            vec![ViewerCommand::ClearVisualSelection]
+        } else if self.mode == VimMode::Normal {
+            self.mode = mode;
+            vec![ViewerCommand::BeginVisualSelection(kind)]
+        } else {
+            self.mode = mode;
+            vec![ViewerCommand::SetVisualSelectionKind(kind)]
+        }
+    }
+
     fn focus_relative(&mut self, viewer: &ViewerState, delta: isize) -> Vec<ViewerCommand> {
+        if self.mode == VimMode::Visual {
+            return Vec::new();
+        }
         let items = navigable_items(viewer);
         if items.is_empty() {
             return Vec::new();
@@ -260,6 +346,10 @@ impl VimState {
     }
 
     fn focus_absolute(&mut self, viewer: &ViewerState, first: bool) -> Vec<ViewerCommand> {
+        if self.mode == VimMode::Visual {
+            self.count = None;
+            return Vec::new();
+        }
         self.count = None;
         let items = navigable_items(viewer);
         let item = if first {
@@ -273,6 +363,9 @@ impl VimState {
     }
 
     fn focus_relative_wrapped(&mut self, viewer: &ViewerState, delta: isize) -> Vec<ViewerCommand> {
+        if self.mode == VimMode::Visual {
+            return Vec::new();
+        }
         let items = search_matches(viewer);
         if items.is_empty() {
             return Vec::new();
@@ -367,6 +460,10 @@ impl VimState {
     }
 
     fn select_visible_row(&mut self, placement: FocusPlacement) -> Vec<ViewerCommand> {
+        if self.mode == VimMode::Visual {
+            self.count = None;
+            return Vec::new();
+        }
         let count = self.take_count();
         vec![ViewerCommand::SelectVisibleRow { placement, count }]
     }
@@ -432,6 +529,14 @@ impl VimState {
                 vec![ViewerCommand::RemoveDisplayedItems(ids)]
             }
         }
+    }
+}
+
+fn mode_for_visual_kind(kind: VisualSelectionKind) -> VimMode {
+    match kind {
+        VisualSelectionKind::Time => VimMode::Visual,
+        VisualSelectionKind::Lines => VimMode::VisualLine,
+        VisualSelectionKind::Block => VimMode::VisualBlock,
     }
 }
 
@@ -527,6 +632,22 @@ pub const NORMAL_BINDINGS: &[Binding] = &[
         description: "copy selected signal name",
     },
     Binding {
+        keys: "v / V / Ctrl-V",
+        description: "select time / signal rows / a signal-by-time block",
+    },
+    Binding {
+        keys: "visual: o / y / Esc",
+        description: "swap active end / copy / cancel selection",
+    },
+    Binding {
+        keys: "V then d",
+        description: "remove selected signal rows",
+    },
+    Binding {
+        keys: "gv",
+        description: "restore the previous visual selection",
+    },
+    Binding {
         keys: "search: Enter",
         description: "accept search and return to Normal mode",
     },
@@ -559,7 +680,7 @@ pub const NORMAL_BINDINGS: &[Binding] = &[
         description: "repeat last display change",
     },
     Binding {
-        keys: "Esc",
+        keys: "Esc / Ctrl-[",
         description: "cancel pending keys",
     },
 ];
@@ -936,6 +1057,134 @@ mod tests {
                     factor: 0.5,
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn visual_modes_switch_swap_yank_and_cancel() {
+        let viewer = viewer();
+        let mut vim = VimState::default();
+        assert_eq!(
+            vim.handle(VimInput::Char('v'), false, &viewer),
+            vec![ViewerCommand::BeginVisualSelection(
+                VisualSelectionKind::Time
+            )]
+        );
+        assert_eq!(vim.mode(), VimMode::Visual);
+        assert_eq!(
+            vim.handle(VimInput::Char('V'), false, &viewer),
+            vec![ViewerCommand::SetVisualSelectionKind(
+                VisualSelectionKind::Lines
+            )]
+        );
+        assert_eq!(vim.mode(), VimMode::VisualLine);
+        assert_eq!(
+            vim.handle(VimInput::Char('o'), false, &viewer),
+            vec![ViewerCommand::SwapVisualSelectionEnds]
+        );
+        assert_eq!(
+            vim.handle(VimInput::Char('y'), false, &viewer),
+            vec![ViewerCommand::CopyVisualSelection]
+        );
+        assert_eq!(vim.mode(), VimMode::Normal);
+
+        assert_eq!(
+            vim.handle(VimInput::Ctrl('v'), false, &viewer),
+            vec![ViewerCommand::BeginVisualSelection(
+                VisualSelectionKind::Block
+            )]
+        );
+        assert_eq!(vim.mode(), VimMode::VisualBlock);
+        assert_eq!(
+            vim.handle(VimInput::Escape, false, &viewer),
+            vec![ViewerCommand::ClearVisualSelection]
+        );
+        assert_eq!(vim.mode(), VimMode::Normal);
+    }
+
+    #[test]
+    fn visual_line_delete_removes_the_selected_rows_but_plain_visual_stays_on_one_row() {
+        let mut viewer = viewer();
+        viewer.apply(ViewerCommand::SetCursor(20));
+        let first = viewer.displayed_items()[0].id();
+        let second = viewer.displayed_items()[1].id();
+        let mut vim = VimState::default();
+
+        for command in vim.handle(VimInput::Char('v'), false, &viewer) {
+            viewer.apply(command);
+        }
+        assert!(vim.handle(VimInput::Char('j'), false, &viewer).is_empty());
+        assert_eq!(viewer.cursor_state().focused_item(), Some(first));
+        for command in vim.handle(VimInput::Char('V'), false, &viewer) {
+            viewer.apply(command);
+        }
+        for command in vim.handle(VimInput::Char('j'), false, &viewer) {
+            viewer.apply(command);
+        }
+        assert_eq!(viewer.cursor_state().focused_item(), Some(second));
+
+        assert_eq!(
+            vim.handle(VimInput::Char('d'), false, &viewer),
+            vec![
+                ViewerCommand::ClearVisualSelection,
+                ViewerCommand::RemoveDisplayedItems(vec![first, second]),
+            ]
+        );
+        assert_eq!(vim.mode(), VimMode::Normal);
+    }
+
+    #[test]
+    fn mode_is_reconstructed_from_persistent_selection_state() {
+        let mut viewer = viewer();
+        viewer.apply(ViewerCommand::SetCursor(20));
+        viewer.apply(ViewerCommand::BeginVisualSelection(
+            VisualSelectionKind::Block,
+        ));
+        let mut vim = VimState::default();
+
+        vim.sync_with_viewer(&viewer);
+        assert_eq!(vim.mode(), VimMode::VisualBlock);
+
+        viewer.apply(ViewerCommand::ClearVisualSelection);
+        vim.sync_with_viewer(&viewer);
+        assert_eq!(vim.mode(), VimMode::Normal);
+    }
+
+    #[test]
+    fn gv_restores_the_previous_visual_mode() {
+        let mut viewer = viewer();
+        viewer.apply(ViewerCommand::SetCursor(20));
+        viewer.apply(ViewerCommand::BeginVisualSelection(
+            VisualSelectionKind::Lines,
+        ));
+        viewer.apply(ViewerCommand::ClearVisualSelection);
+        let mut vim = VimState::default();
+
+        assert_eq!(
+            keys(
+                &mut vim,
+                &viewer,
+                &[VimInput::Char('g'), VimInput::Char('v')]
+            ),
+            vec![ViewerCommand::RestoreVisualSelection]
+        );
+        assert_eq!(vim.mode(), VimMode::VisualLine);
+    }
+
+    #[test]
+    fn frame_state_sync_does_not_clear_a_normal_mode_prefix() {
+        let viewer = viewer();
+        let mut vim = VimState::default();
+
+        assert!(vim.handle(VimInput::Char('g'), false, &viewer).is_empty());
+        assert_eq!(vim.pending_display(), "g");
+        vim.sync_with_viewer(&viewer);
+        assert_eq!(vim.pending_display(), "g");
+        assert_eq!(
+            vim.handle(VimInput::Char('g'), false, &viewer),
+            vec![ViewerCommand::SetFocusedItem(
+                viewer.displayed_items()[0].id()
+            )]
         );
     }
 }

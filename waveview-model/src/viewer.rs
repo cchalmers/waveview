@@ -235,6 +235,38 @@ pub struct MarkPosition {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum VisualSelectionKind {
+    Time,
+    Lines,
+    Block,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct VisualSelection {
+    kind: VisualSelectionKind,
+    anchor: MarkPosition,
+    active: MarkPosition,
+}
+
+impl VisualSelection {
+    pub fn kind(self) -> VisualSelectionKind {
+        self.kind
+    }
+
+    pub fn anchor(self) -> MarkPosition {
+        self.anchor
+    }
+
+    pub fn active(self) -> MarkPosition {
+        self.active
+    }
+
+    pub fn time_range(self) -> std::ops::RangeInclusive<u64> {
+        self.anchor.time.min(self.active.time)..=self.anchor.time.max(self.active.time)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum MarkJumpTarget {
     SignalAndTime,
     Time,
@@ -285,6 +317,8 @@ pub struct ViewerState {
     jump_list: Vec<MarkPosition>,
     jump_index: Option<usize>,
     marks_visible: bool,
+    visual_selection: Option<VisualSelection>,
+    last_visual_selection: Option<VisualSelection>,
     display_undo: Vec<Vec<DisplayedItem>>,
     display_redo: Vec<Vec<DisplayedItem>>,
     next_displayed_item_id: u64,
@@ -314,6 +348,8 @@ impl ViewerState {
             jump_list: Vec::new(),
             jump_index: None,
             marks_visible: true,
+            visual_selection: None,
+            last_visual_selection: None,
             display_undo: Vec::new(),
             display_redo: Vec::new(),
             next_displayed_item_id,
@@ -356,6 +392,44 @@ impl ViewerState {
         self.marks_visible
     }
 
+    pub fn visual_selection(&self) -> Option<VisualSelection> {
+        self.visual_selection
+    }
+
+    pub fn last_visual_selection(&self) -> Option<VisualSelection> {
+        self.last_visual_selection
+    }
+
+    pub fn visual_item_range(&self) -> Option<std::ops::RangeInclusive<usize>> {
+        let selection = self.visual_selection?;
+        let anchor = self
+            .displayed_items
+            .iter()
+            .position(|item| item.id == selection.anchor.item)?;
+        let active = self
+            .displayed_items
+            .iter()
+            .position(|item| item.id == selection.active.item)?;
+        Some(anchor.min(active)..=anchor.max(active))
+    }
+
+    pub fn item_is_visually_selected(&self, id: DisplayedItemId) -> bool {
+        let Some(selection) = self.visual_selection else {
+            return false;
+        };
+        match selection.kind {
+            VisualSelectionKind::Time => selection.anchor.item == id,
+            VisualSelectionKind::Lines | VisualSelectionKind::Block => {
+                self.visual_item_range().is_some_and(|range| {
+                    self.displayed_items
+                        .iter()
+                        .position(|item| item.id == id)
+                        .is_some_and(|index| range.contains(&index))
+                })
+            }
+        }
+    }
+
     /// Apply one command and return host work requested by that command.
     pub fn apply(&mut self, command: ViewerCommand) -> Vec<EffectRequest> {
         match command {
@@ -380,6 +454,8 @@ impl ViewerState {
                 self.previous_jump = None;
                 self.jump_list.clear();
                 self.jump_index = None;
+                self.visual_selection = None;
+                self.last_visual_selection = None;
                 self.display_undo.clear();
                 self.display_redo.clear();
                 self.next_displayed_item_id = self.displayed_items.len() as u64;
@@ -397,6 +473,7 @@ impl ViewerState {
                 if self.cursor.time != Some(time) {
                     let origin = self.current_position();
                     self.cursor.time = Some(time);
+                    self.sync_visual_active();
                     self.viewport.reveal(time as f64, self.capture_end());
                     if let Some(origin) = origin {
                         self.record_jump(origin);
@@ -405,25 +482,39 @@ impl ViewerState {
             }
             ViewerCommand::SetCursor(time) => {
                 self.cursor.time = Some(time.min(self.capture_end()));
+                self.sync_visual_active();
             }
             ViewerCommand::ClearCursor => {
                 self.cursor.time = None;
                 self.cursor.measurement_start = None;
+                self.visual_selection = None;
             }
             ViewerCommand::BeginMeasurement(time) => {
                 let time = time.min(self.capture_end());
                 self.cursor.time = Some(time);
-                self.cursor.measurement_start = Some(time);
+                self.cursor.measurement_start = None;
+                if let Some(position) = self.current_position() {
+                    if self.visual_selection.is_some() {
+                        self.last_visual_selection = self.visual_selection;
+                    }
+                    self.visual_selection = Some(VisualSelection {
+                        kind: VisualSelectionKind::Time,
+                        anchor: position,
+                        active: position,
+                    });
+                }
             }
             ViewerCommand::UpdateMeasurement(time) => {
-                if self.cursor.measurement_start.is_some() {
+                if self.visual_selection.is_some() {
                     self.cursor.time = Some(time.min(self.capture_end()));
+                    self.sync_visual_active();
                 }
             }
             ViewerCommand::EndMeasurement => self.cursor.measurement_start = None,
             ViewerCommand::SetFocusedItem(id) => {
                 if self.displayed_items.iter().any(|item| item.id == id) {
                     self.cursor.focused_item = Some(id);
+                    self.sync_visual_active();
                 }
             }
             ViewerCommand::FocusDisplayedRelative(delta) => {
@@ -446,6 +537,7 @@ impl ViewerState {
                         },
                     );
                     self.cursor.focused_item = Some(navigable[target].id);
+                    self.sync_visual_active();
                 }
             }
             ViewerCommand::SetSearch(search) => self.search = search,
@@ -552,6 +644,69 @@ impl ViewerState {
             ViewerCommand::ClearMarks => self.marks.clear(),
             ViewerCommand::SetMarksVisible(visible) => self.marks_visible = visible,
             ViewerCommand::ToggleMarksVisible => self.marks_visible = !self.marks_visible,
+            ViewerCommand::BeginVisualSelection(kind) => {
+                if self.cursor.time.is_none() {
+                    let time = (self.viewport.start() + self.viewport.span() * 0.5)
+                        .round()
+                        .clamp(0.0, self.capture_end() as f64)
+                        as u64;
+                    self.cursor.time = Some(time);
+                }
+                if let Some(position) = self.current_position() {
+                    if self.visual_selection.is_some() {
+                        self.last_visual_selection = self.visual_selection;
+                    }
+                    self.visual_selection = Some(VisualSelection {
+                        kind,
+                        anchor: position,
+                        active: position,
+                    });
+                }
+            }
+            ViewerCommand::SetVisualSelectionKind(kind) => {
+                if let Some(selection) = &mut self.visual_selection {
+                    selection.kind = kind;
+                }
+            }
+            ViewerCommand::SwapVisualSelectionEnds => {
+                if let Some(selection) = &mut self.visual_selection {
+                    std::mem::swap(&mut selection.anchor, &mut selection.active);
+                    self.cursor.focused_item = Some(selection.active.item);
+                    self.cursor.time = Some(selection.active.time);
+                    self.viewport
+                        .reveal(selection.active.time as f64, self.capture_end());
+                }
+            }
+            ViewerCommand::ClearVisualSelection => {
+                if self.visual_selection.is_some() {
+                    self.last_visual_selection = self.visual_selection.take();
+                }
+            }
+            ViewerCommand::RestoreVisualSelection => {
+                let Some(selection) = self.last_visual_selection else {
+                    return Vec::new();
+                };
+                let resolved = [selection.anchor.item, selection.active.item]
+                    .into_iter()
+                    .all(|id| self.displayed_items.iter().any(|item| item.id == id));
+                if !resolved {
+                    self.last_visual_selection = None;
+                    return Vec::new();
+                }
+                self.last_visual_selection = self.visual_selection.replace(selection);
+                self.cursor.focused_item = Some(selection.active.item);
+                self.cursor.time = Some(selection.active.time.min(self.capture_end()));
+                self.viewport
+                    .reveal(selection.active.time as f64, self.capture_end());
+                return vec![EffectRequest::RevealFocusedItem(FocusPlacement::Center)];
+            }
+            ViewerCommand::CopyVisualSelection => {
+                let text = self.visual_selection_text();
+                if self.visual_selection.is_some() {
+                    self.last_visual_selection = self.visual_selection.take();
+                }
+                return text.map_or_else(Vec::new, |text| vec![EffectRequest::CopyText(text)]);
+            }
             ViewerCommand::RequestMarkList => {
                 return vec![EffectRequest::PromptText(self.mark_list())];
             }
@@ -656,6 +811,49 @@ impl ViewerState {
         })
     }
 
+    fn sync_visual_active(&mut self) {
+        let Some(position) = self.current_position() else {
+            return;
+        };
+        if let Some(selection) = &mut self.visual_selection {
+            selection.active = position;
+        }
+    }
+
+    fn visual_selection_text(&self) -> Option<String> {
+        let selection = self.visual_selection?;
+        let time_range = selection.time_range();
+        let item_range = match selection.kind {
+            VisualSelectionKind::Time => {
+                let index = self
+                    .displayed_items
+                    .iter()
+                    .position(|item| item.id == selection.anchor.item)?;
+                index..=index
+            }
+            VisualSelectionKind::Lines | VisualSelectionKind::Block => self.visual_item_range()?,
+        };
+        let mut lines = Vec::new();
+        for item in &self.displayed_items[item_range] {
+            let name = item.alias().map(str::to_owned).or_else(|| {
+                item.signal_id()
+                    .and_then(|id| self.waveform.signal(id))
+                    .map(|signal| signal.name().to_owned())
+            })?;
+            match selection.kind {
+                VisualSelectionKind::Lines => lines.push(name),
+                VisualSelectionKind::Time | VisualSelectionKind::Block => {
+                    lines.push(format!(
+                        "{name}\t{}..{}",
+                        time_range.start(),
+                        time_range.end()
+                    ));
+                }
+            }
+        }
+        Some(lines.join("\n"))
+    }
+
     fn jump_to_position(
         &mut self,
         position: MarkPosition,
@@ -675,6 +873,7 @@ impl ViewerState {
         }
         let time = position.time.min(self.capture_end());
         self.cursor.time = Some(time);
+        self.sync_visual_active();
         self.viewport.reveal(time as f64, self.capture_end());
         if record_previous {
             if let Some(previous) = previous {
@@ -776,6 +975,20 @@ impl ViewerState {
         {
             self.cursor.focused_item = self.displayed_items.first().map(DisplayedItem::id);
         }
+        if self.visual_selection.is_some_and(|selection| {
+            [selection.anchor.item, selection.active.item]
+                .into_iter()
+                .any(|id| !self.displayed_items.iter().any(|item| item.id == id))
+        }) {
+            self.visual_selection = None;
+        }
+        if self.last_visual_selection.is_some_and(|selection| {
+            [selection.anchor.item, selection.active.item]
+                .into_iter()
+                .any(|id| !self.displayed_items.iter().any(|item| item.id == id))
+        }) {
+            self.last_visual_selection = None;
+        }
     }
 }
 
@@ -844,6 +1057,12 @@ pub enum ViewerCommand {
     ClearMarks,
     SetMarksVisible(bool),
     ToggleMarksVisible,
+    BeginVisualSelection(VisualSelectionKind),
+    SetVisualSelectionKind(VisualSelectionKind),
+    SwapVisualSelectionEnds,
+    ClearVisualSelection,
+    RestoreVisualSelection,
+    CopyVisualSelection,
     RequestMarkList,
     UndoDisplayChange,
     RedoDisplayChange,
@@ -1369,16 +1588,114 @@ mod tests {
     }
 
     #[test]
-    fn measurement_commands_clamp_times_and_preserve_result() {
-        let mut state = ViewerState::new(100);
+    fn mouse_measurement_commands_create_a_persistent_time_selection() {
+        let mut state = state_with_signals(1);
 
         state.apply(ViewerCommand::BeginMeasurement(20));
         state.apply(ViewerCommand::UpdateMeasurement(150));
-        assert_eq!(state.cursor_state().measurement_start(), Some(20));
+        let selection = state.visual_selection().unwrap();
+        assert_eq!(selection.kind(), VisualSelectionKind::Time);
+        assert_eq!(selection.time_range(), 20..=100);
+        assert_eq!(state.cursor_state().measurement_start(), None);
         assert_eq!(state.cursor(), Some(100));
 
         state.apply(ViewerCommand::EndMeasurement);
         assert_eq!(state.cursor_state().measurement_start(), None);
+        assert_eq!(state.visual_selection(), Some(selection));
         assert_eq!(state.cursor(), Some(100));
+    }
+
+    #[test]
+    fn visual_selection_tracks_time_and_focused_item_and_swaps_ends() {
+        let mut state = state_with_signals(3);
+        let first = state.displayed_items()[0].id();
+        let third = state.displayed_items()[2].id();
+        state.apply(ViewerCommand::SetCursor(20));
+        state.apply(ViewerCommand::BeginVisualSelection(
+            VisualSelectionKind::Block,
+        ));
+        state.apply(ViewerCommand::SetFocusedItem(third));
+        state.apply(ViewerCommand::SetCursor(80));
+
+        let selection = state.visual_selection().unwrap();
+        assert_eq!(
+            selection.anchor(),
+            MarkPosition {
+                item: first,
+                time: 20
+            }
+        );
+        assert_eq!(
+            selection.active(),
+            MarkPosition {
+                item: third,
+                time: 80
+            }
+        );
+        assert_eq!(state.visual_item_range(), Some(0..=2));
+        assert!(state
+            .displayed_items()
+            .iter()
+            .all(|item| state.item_is_visually_selected(item.id())));
+
+        state.apply(ViewerCommand::SwapVisualSelectionEnds);
+        assert_eq!(state.cursor_state().focused_item(), Some(first));
+        assert_eq!(state.cursor(), Some(20));
+    }
+
+    #[test]
+    fn visual_yank_has_stable_line_and_block_text() {
+        let mut state = state_with_signals(2);
+        let second = state.displayed_items()[1].id();
+        state.apply(ViewerCommand::SetCursor(10));
+        state.apply(ViewerCommand::BeginVisualSelection(
+            VisualSelectionKind::Lines,
+        ));
+        state.apply(ViewerCommand::SetFocusedItem(second));
+        assert_eq!(
+            state.apply(ViewerCommand::CopyVisualSelection),
+            vec![EffectRequest::CopyText("signal_0\nsignal_1".to_owned())]
+        );
+        assert_eq!(state.visual_selection(), None);
+
+        state.apply(ViewerCommand::BeginVisualSelection(
+            VisualSelectionKind::Block,
+        ));
+        state.apply(ViewerCommand::SetFocusedItem(
+            state.displayed_items()[0].id(),
+        ));
+        state.apply(ViewerCommand::SetCursor(30));
+        assert_eq!(
+            state.apply(ViewerCommand::CopyVisualSelection),
+            vec![EffectRequest::CopyText(
+                "signal_0\t10..30\nsignal_1\t10..30".to_owned()
+            )]
+        );
+    }
+
+    #[test]
+    fn previous_visual_selection_can_be_restored() {
+        let mut state = state_with_signals(3);
+        let first = state.displayed_items()[0].id();
+        let third = state.displayed_items()[2].id();
+        state.apply(ViewerCommand::SetCursor(20));
+        state.apply(ViewerCommand::BeginVisualSelection(
+            VisualSelectionKind::Block,
+        ));
+        state.apply(ViewerCommand::SetFocusedItem(third));
+        state.apply(ViewerCommand::SetCursor(80));
+        let selection = state.visual_selection().unwrap();
+
+        state.apply(ViewerCommand::ClearVisualSelection);
+        assert_eq!(state.visual_selection(), None);
+        assert_eq!(state.last_visual_selection(), Some(selection));
+        assert_eq!(
+            state.apply(ViewerCommand::RestoreVisualSelection),
+            vec![EffectRequest::RevealFocusedItem(FocusPlacement::Center)]
+        );
+        assert_eq!(state.visual_selection(), Some(selection));
+        assert_eq!(state.cursor_state().focused_item(), Some(third));
+        assert_eq!(state.cursor(), Some(80));
+        assert!(state.item_is_visually_selected(first));
     }
 }

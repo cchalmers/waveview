@@ -32,16 +32,27 @@ pub fn render(
         .marks(&markers)
         .show(ui);
 
-    commands.extend(response.actions.into_iter().map(|action| match action {
-        timeline::Action::Pan(delta) => ViewerCommand::PanTime(delta),
-        timeline::Action::Zoom { anchor, factor } => ViewerCommand::ZoomTime {
-            anchor: anchor as f64,
-            factor,
-        },
-        timeline::Action::Fit => ViewerCommand::FitTime,
-        timeline::Action::SetCursor(time) => ViewerCommand::SetCursor(time),
-        timeline::Action::BeginSelection(time) => ViewerCommand::BeginMeasurement(time),
-        timeline::Action::UpdateSelection(time) => ViewerCommand::UpdateMeasurement(time),
-        timeline::Action::EndSelection => ViewerCommand::EndMeasurement,
-    }));
+    for action in response.actions {
+        match action {
+            timeline::Action::Pan(delta) => commands.push(ViewerCommand::PanTime(delta)),
+            timeline::Action::Zoom { anchor, factor } => {
+                commands.push(ViewerCommand::ZoomTime {
+                    anchor: anchor as f64,
+                    factor,
+                });
+            }
+            timeline::Action::Fit => commands.push(ViewerCommand::FitTime),
+            timeline::Action::SetCursor(time) => {
+                commands.push(ViewerCommand::ClearVisualSelection);
+                commands.push(ViewerCommand::SetCursor(time));
+            }
+            timeline::Action::BeginSelection(time) => {
+                commands.push(ViewerCommand::BeginMeasurement(time));
+            }
+            timeline::Action::UpdateSelection(time) => {
+                commands.push(ViewerCommand::UpdateMeasurement(time));
+            }
+            timeline::Action::EndSelection => commands.push(ViewerCommand::EndMeasurement),
+        }
+    }
 }

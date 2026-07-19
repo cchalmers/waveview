@@ -8,6 +8,8 @@ use crate::viewer::{DisplayColor, ValueFormat};
 pub struct SignalPresentation {
     pub value_format: ValueFormat,
     pub color: DisplayColor,
+    pub focused: bool,
+    pub visually_selected: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

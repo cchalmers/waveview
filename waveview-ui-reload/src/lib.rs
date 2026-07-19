@@ -29,10 +29,9 @@ pub fn render_signal_button(
     value: Option<&[waveview_model::vcd::Value]>,
     presentation: waveview_model::ui_types::SignalPresentation,
     height: f32,
-    selected: bool,
     matcher: Option<&SearchMatcher>,
 ) -> egui::Response {
-    waveview_ui::render_signal_button(ui, name, value, presentation, height, selected, matcher)
+    waveview_ui::render_signal_button(ui, name, value, presentation, height, matcher)
 }
 
 #[unsafe(no_mangle)]

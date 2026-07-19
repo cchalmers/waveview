@@ -10,19 +10,34 @@ pub fn render_signal_button(
     value: Option<&[Value]>,
     presentation: SignalPresentation,
     height: f32,
-    selected: bool,
     matcher: Option<&SearchMatcher>,
 ) -> egui::Response {
     let text_color = crate::display_color::resolve(presentation.color, ui.visuals().text_color());
     let text = highlighted_signal_name(ui, name, matcher, text_color);
-    let mut button = egui::Button::selectable(selected, text)
-        .min_size(egui::vec2(ui.available_width(), height))
-        .truncate();
+    let selection_color = egui::Color32::from_rgb(0xd2, 0x99, 0x1d);
+    let mut button = if presentation.visually_selected {
+        let stroke = if presentation.focused {
+            egui::Stroke::new(2.0, ui.visuals().selection.stroke.color)
+        } else {
+            egui::Stroke::new(1.0, selection_color)
+        };
+        egui::Button::new(text)
+            .fill(selection_color.linear_multiply(0.35))
+            .stroke(stroke)
+    } else {
+        egui::Button::selectable(presentation.focused, text)
+    }
+    .min_size(egui::vec2(ui.available_width(), height))
+    .truncate();
     if let Some(value) = value {
         let text = egui::RichText::new(crate::value::format(value, presentation.value_format))
             .monospace()
             .color(text_color);
-        button = button.right_text(if selected { text.strong() } else { text });
+        button = button.right_text(if presentation.focused || presentation.visually_selected {
+            text.strong()
+        } else {
+            text
+        });
     }
     ui.add_sized(egui::vec2(ui.available_width(), height), button)
 }

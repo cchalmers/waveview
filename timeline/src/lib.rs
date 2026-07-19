@@ -108,7 +108,7 @@ impl<'a> Timeline<'a> {
             ui.painter().rect_filled(
                 Rect::from_x_y_ranges(left..=right, rect.y_range()),
                 0.0,
-                Color32::LIGHT_BLUE.linear_multiply(0.12),
+                selection_color().linear_multiply(0.12),
             );
         }
         for mark in self.marks {
@@ -272,11 +272,16 @@ fn paint_readout(
     formatter: &dyn Fn(u64) -> String,
 ) {
     let font = FontId::new(12.0, FontFamily::Monospace);
-    let color = Color32::LIGHT_BLUE;
+    let color = if selection.is_some() {
+        selection_color()
+    } else {
+        Color32::LIGHT_BLUE
+    };
     if let Some(selection) = selection {
         let duration = selection.end.saturating_sub(selection.start);
+        let arrow = selection_arrow(selection, cursor);
         let text = format!(
-            "{} → {}   Δ {}",
+            "{} {arrow} {}   Δ {}",
             formatter(selection.start),
             formatter(selection.end),
             formatter(duration)
@@ -305,6 +310,18 @@ fn paint_readout(
             font,
             color,
         );
+    }
+}
+
+fn selection_color() -> Color32 {
+    Color32::from_rgb(0xd2, 0x99, 0x1d)
+}
+
+fn selection_arrow(selection: TimeRange, active: Option<u64>) -> &'static str {
+    if selection.start < selection.end && active == Some(selection.start) {
+        "←"
+    } else {
+        "→"
     }
 }
 
@@ -348,5 +365,13 @@ mod tests {
         assert_eq!(nice_gap(2), 5);
         assert_eq!(nice_gap(49), 50);
         assert_eq!(nice_gap(51), 100);
+    }
+
+    #[test]
+    fn selection_arrow_follows_the_active_end() {
+        let selection = TimeRange::new(20, 80);
+        assert_eq!(selection_arrow(selection, Some(80)), "→");
+        assert_eq!(selection_arrow(selection, Some(20)), "←");
+        assert_eq!(selection_arrow(TimeRange::new(20, 20), Some(20)), "→");
     }
 }

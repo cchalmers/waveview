@@ -1,5 +1,5 @@
 use eframe::egui;
-use waveview_model::viewer::{DisplayedItem, ViewerCommand, ViewerState};
+use waveview_model::viewer::{DisplayedItem, ViewerCommand, ViewerState, VisualSelectionKind};
 use waveview_model::waveform::WaveformSignal;
 use waveview_model::DisplayedItemId;
 
@@ -77,6 +77,8 @@ pub fn render(
         }
     });
 
+    paint_visual_selection(ui, viewer, &signals, &mark_geometry);
+
     if ui.rect_contains_pointer(egui::Rect::EVERYTHING) {
         let zoom = ui.input(|input| input.zoom_delta());
         if zoom != 1.0 {
@@ -97,46 +99,46 @@ pub fn render(
     }
 
     let measurement_color = egui::Color32::from_rgb(0xd2, 0x99, 0x1d);
-    let mut active_measurement_start = viewer.cursor_state().measurement_start();
+    let show_mouse_time_cursor = response.dragged()
+        || ui.ctx().data(|data| {
+            data.get_temp::<bool>(egui::Id::new("waveview_mouse_time_cursor_visible"))
+                .unwrap_or(true)
+        });
     if let Some(position) = response.hover_pos() {
         let time = view_start + (position.x - canvas_rect.left()) / pixels_per_tick;
         let rounded_time = time.round();
         let hover_time = rounded_time.max(0.0) as u64;
+        let local_row = ((position.y - canvas_rect.top())
+            / (row_height + ui.spacing().item_spacing.y))
+            .floor()
+            .max(0.0) as usize;
+        let hovered_item = signals
+            .get(visible_rows.start + local_row)
+            .map(|(_, item)| item.id());
 
         if response.drag_started() {
-            active_measurement_start = Some(hover_time);
+            if let Some(id) = hovered_item {
+                commands.push(ViewerCommand::SetFocusedItem(id));
+            }
             commands.push(ViewerCommand::BeginMeasurement(hover_time));
         } else if response.dragged() {
             commands.push(ViewerCommand::UpdateMeasurement(hover_time));
         } else if response.clicked() {
+            commands.push(ViewerCommand::ClearVisualSelection);
+            if let Some(id) = hovered_item {
+                commands.push(ViewerCommand::SetFocusedItem(id));
+            }
             commands.push(ViewerCommand::SetCursor(hover_time));
         }
 
-        let hover_x = canvas_rect.left() + (rounded_time - view_start) * pixels_per_tick;
-        ui.painter().line_segment(
-            [
-                egui::pos2(hover_x, interaction_rect.top()),
-                egui::pos2(hover_x, interaction_rect.bottom()),
-            ],
-            egui::Stroke::new(2.0, measurement_color),
-        );
-
-        if let Some(start_time) = active_measurement_start {
-            let start_x = canvas_rect.left() + (start_time as f32 - view_start) * pixels_per_tick;
+        if show_mouse_time_cursor {
+            let hover_x = canvas_rect.left() + (rounded_time - view_start) * pixels_per_tick;
             ui.painter().line_segment(
                 [
-                    egui::pos2(start_x, interaction_rect.top()),
-                    egui::pos2(start_x, interaction_rect.bottom()),
+                    egui::pos2(hover_x, interaction_rect.top()),
+                    egui::pos2(hover_x, interaction_rect.bottom()),
                 ],
                 egui::Stroke::new(2.0, measurement_color),
-            );
-            ui.painter().rect_filled(
-                egui::Rect::from_two_pos(
-                    egui::pos2(start_x, interaction_rect.top()),
-                    egui::pos2(hover_x, interaction_rect.bottom()),
-                ),
-                egui::CornerRadius::ZERO,
-                measurement_color.linear_multiply(0.1),
             );
         }
     }
@@ -181,6 +183,66 @@ pub fn render(
         .flatten();
 
     (response, context_target)
+}
+
+fn paint_visual_selection(
+    ui: &egui::Ui,
+    viewer: &ViewerState,
+    signals: &[DisplayedSignal<'_>],
+    geometry: &MarkGeometry,
+) {
+    let Some(selection) = viewer.visual_selection() else {
+        return;
+    };
+    let Some(anchor_row) = signals
+        .iter()
+        .position(|(_, item)| item.id() == selection.anchor().item())
+    else {
+        return;
+    };
+    let active_row = signals
+        .iter()
+        .position(|(_, item)| item.id() == selection.active().item())
+        .unwrap_or(anchor_row);
+    let rows = match selection.kind() {
+        VisualSelectionKind::Time => anchor_row..=anchor_row,
+        VisualSelectionKind::Lines | VisualSelectionKind::Block => {
+            anchor_row.min(active_row)..=anchor_row.max(active_row)
+        }
+    };
+    let row_span = geometry.row_height + ui.spacing().item_spacing.y;
+    let time_range = selection.time_range();
+    let (left, right) = match selection.kind() {
+        VisualSelectionKind::Lines => (geometry.canvas_rect.left(), geometry.canvas_rect.right()),
+        VisualSelectionKind::Time | VisualSelectionKind::Block => {
+            let left = geometry.canvas_rect.left()
+                + (*time_range.start() as f32 - geometry.view_start) * geometry.pixels_per_tick;
+            let right = geometry.canvas_rect.left()
+                + (*time_range.end() as f32 - geometry.view_start) * geometry.pixels_per_tick;
+            (left, right)
+        }
+    };
+    for row in rows.filter(|row| geometry.visible_rows.contains(row)) {
+        let local_row = row - geometry.visible_rows.start;
+        let top = geometry.canvas_rect.top() + local_row as f32 * row_span;
+        let rect = egui::Rect::from_min_max(
+            egui::pos2(left, top),
+            egui::pos2(right.max(left + 2.0), top + geometry.row_height),
+        )
+        .intersect(geometry.canvas_rect);
+        let selection_color = egui::Color32::from_rgb(0xd2, 0x99, 0x1d);
+        ui.painter().rect_filled(
+            rect,
+            egui::CornerRadius::ZERO,
+            selection_color.linear_multiply(0.12),
+        );
+        ui.painter().rect_stroke(
+            rect,
+            egui::CornerRadius::ZERO,
+            egui::Stroke::new(1.0, selection_color),
+            egui::StrokeKind::Inside,
+        );
+    }
 }
 
 fn paint_marks(

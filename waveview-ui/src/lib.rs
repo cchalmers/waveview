@@ -40,10 +40,9 @@ pub fn render_signal_button(
     value: Option<&[waveview_model::vcd::Value]>,
     presentation: waveview_model::ui_types::SignalPresentation,
     height: f32,
-    selected: bool,
     matcher: Option<&SearchMatcher>,
 ) -> egui::Response {
-    displayed_items::render_signal_button(ui, name, value, presentation, height, selected, matcher)
+    displayed_items::render_signal_button(ui, name, value, presentation, height, matcher)
 }
 
 pub fn render_signal_context_menu(

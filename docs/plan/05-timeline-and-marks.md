@@ -79,3 +79,14 @@ offer rebinding when a matching signal returns.
   `marks show|hide|toggle`; navigation and `marks` listing remain active while hidden.
 - Marks currently reset on waveform replacement; compatible-source preservation and unresolved-path
   rebinding remain part of the session/source identity work.
+- `v`, `V`, and `Ctrl-V` create time, displayed-row, and rectangular row-by-time selections in
+  durable viewer state. Existing time/row motions extend the active end, `o` swaps ends, `Esc`
+  cancels, and `y` copies a stable line-oriented representation before returning to Normal mode.
+  `V` followed by `d` removes the selected rows as one undoable display change. Plain `v` stays on
+  its original signal rather than allowing `j`/`k` to create an ambiguous second row dimension;
+  `gv` restores the most recently exited selection and its Visual mode.
+- Mouse dragging and keyboard time selection now share the same persistent selection model, orange
+  name/canvas/timeline presentation, and start/end/delta readout. A plain click or `Esc` clears the
+  selection. The readout arrow follows the active end, and keyboard use hides the mouse hover-time
+  line until the pointer moves again. Restored selection state reconstructs the matching Vim mode
+  after startup and survives UI dylib reloads.

@@ -57,14 +57,13 @@ pub fn render_signal_button(
     value: Option<&[waveview_model::vcd::Value]>,
     presentation: SignalPresentation,
     height: f32,
-    selected: bool,
     matcher: Option<&SearchMatcher>,
 ) -> egui::Response {
     #[cfg(all(feature = "reload", not(target_arch = "wasm32")))]
-    return hot_ui::render_signal_button(ui, name, value, presentation, height, selected, matcher);
+    return hot_ui::render_signal_button(ui, name, value, presentation, height, matcher);
 
     #[cfg(not(all(feature = "reload", not(target_arch = "wasm32"))))]
-    waveview_ui::render_signal_button(ui, name, value, presentation, height, selected, matcher)
+    waveview_ui::render_signal_button(ui, name, value, presentation, height, matcher)
 }
 
 pub fn render_signal_context_menu(

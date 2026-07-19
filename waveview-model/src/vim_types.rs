@@ -8,6 +8,9 @@ pub enum VimInput {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VimMode {
     Normal,
+    Visual,
+    VisualLine,
+    VisualBlock,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
