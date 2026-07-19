@@ -3,6 +3,7 @@
 mod activity;
 mod canvas;
 mod displayed_items;
+mod menus;
 mod signal_browser;
 mod timeline_adapter;
 mod vim_ui;
@@ -11,6 +12,7 @@ mod wave;
 use eframe::egui;
 use std::collections::HashSet;
 use waveview_model::search::SearchMatcher;
+use waveview_model::ui_types::MenuAction;
 use waveview_model::viewer::ViewerCommand;
 use waveview_model::viewer::ViewerState;
 use waveview_model::vim::{VimInput, VimState};
@@ -39,6 +41,28 @@ pub fn render_signal_button(
 
 pub fn render_signal_activity_button(ui: &mut egui::Ui, selected: bool) -> bool {
     activity::render_signal_button(ui, selected)
+}
+
+pub fn render_file_menu(ui: &mut egui::Ui, native: bool) -> Option<MenuAction> {
+    menus::render_file(ui, native)
+}
+
+pub fn render_edit_menu(ui: &mut egui::Ui, has_focused_item: bool) -> Option<MenuAction> {
+    menus::render_edit(ui, has_focused_item)
+}
+
+pub fn render_view_menu(
+    ui: &mut egui::Ui,
+    signal_browser_open: bool,
+    info_open: bool,
+    samples_open: bool,
+    row_height: &mut f32,
+) -> Option<MenuAction> {
+    menus::render_view(ui, signal_browser_open, info_open, samples_open, row_height)
+}
+
+pub fn render_help_menu(ui: &mut egui::Ui) -> Option<MenuAction> {
+    menus::render_help(ui)
 }
 
 pub fn render_signal_browser_header(ui: &mut egui::Ui, all_signals_displayed: bool) -> bool {

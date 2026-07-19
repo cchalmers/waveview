@@ -4,6 +4,7 @@ use eframe::egui;
 use eframe::egui::NumExt;
 use egui::*;
 use waveview_model::search::{SearchHistory, SearchMatcher};
+use waveview_model::ui_types::MenuAction;
 use waveview_model::viewer::{
     DisplayedItem, EffectRequest, FocusPlacement, ViewerCommand, ViewerState,
 };
@@ -537,139 +538,92 @@ impl eframe::App for TemplateApp {
         // Tip: a good default choice is to just keep the `CentralPanel`.
         // For inspiration and more examples, go to https://emilk.github.io/egui
 
+        let mut menu_action = None;
         egui::Panel::top("top_panel").show(root_ui, |ui| {
             // The top panel is often a good place for a menu bar:
             egui::MenuBar::new().ui(ui, |ui| {
                 egui::widgets::global_theme_preference_switch(ui);
                 ui.separator();
                 ui.menu_button("File", |ui| {
-                    if ui.button("Open File…").clicked() {
-                        for effect in viewer.apply(ViewerCommand::RequestOpenFile) {
-                            if effect == EffectRequest::OpenFile {
-                                *a_future = Some(Box::pin(async {
-                                    let handle = rfd::AsyncFileDialog::new().pick_file().await;
-                                    if let Some(h) = &handle {
-                                        let bytes = h.read().await;
-                                        let mut cursor = std::io::Cursor::new(&bytes);
-                                        let (signals, time) =
-                                            vcd::read_clocked_vcd(&mut cursor).unwrap();
-                                        Some(OpenedVcd {
-                                            waveform: mk_waveform(signals, time),
-                                        })
-                                    } else {
-                                        None
-                                    }
-                                }));
-                            }
-                        }
-                        ui.close();
-                        ctx.request_repaint();
-                    }
-                    if ui.button("Open URL…").clicked() {
-                        url_window.open = true;
-                        ui.close();
-                    }
-                    if ui.button("Connect live…").clicked() {
-                        live.open = true;
-                        ui.close();
-                    }
-                    if ui.button("Reset").clicked() {
-                        viewer.apply(ViewerCommand::ReplaceWaveform {
-                            waveform: Waveform::empty(),
-                            preserve_view: false,
-                        });
-                        *y_offset = 0.0;
-                        ui.close();
-                    }
-                    #[cfg(not(target_arch = "wasm32"))]
-                    if ui.button("Quit").clicked() {
-                        ctx.send_viewport_cmd(ViewportCommand::Close);
-                    }
+                    menu_action =
+                        wave_dispatch::render_file_menu(ui, cfg!(not(target_arch = "wasm32")));
                 });
                 ui.menu_button("Edit", |ui| {
-                    if ui.button("Undo display change").clicked() {
-                        viewer.apply(ViewerCommand::UndoDisplayChange);
-                        ui.close();
-                    }
-                    if ui.button("Redo display change").clicked() {
-                        viewer.apply(ViewerCommand::RedoDisplayChange);
-                        ui.close();
-                    }
-                    if let Some(id) = viewer.cursor_state().focused_item() {
-                        if ui.button("Remove selected signal").clicked() {
-                            viewer.apply(ViewerCommand::RemoveDisplayedItem(id));
-                            ui.close();
-                        }
-                    }
+                    menu_action = wave_dispatch::render_edit_menu(
+                        ui,
+                        viewer.cursor_state().focused_item().is_some(),
+                    );
                 });
                 ui.menu_button("View", |ui| {
-                    let mut signals_selected = *selected_activity == Some(Activity::Signals);
-                    if ui
-                        .checkbox(&mut signals_selected, "Signal browser")
-                        .clicked()
-                    {
-                        *selected_activity = signals_selected.then_some(Activity::Signals);
-                        ui.close();
-                    }
-                    ui.separator();
-                    if ui.button("Fit time").clicked() {
-                        viewer.apply(ViewerCommand::FitTime);
-                        ui.close();
-                    }
-                    ui.separator();
-                    ui.add(egui::Slider::new(row_height, 25.0..=128.0).text("height"));
-                    // if *show_info {
-                    //     if ui.button("Hide info").clicked() {
-                    //         *show_info = false;
-                    //         ui.close_menu();
-                    //     }
-                    // } else if ui.button("Show info").clicked() {
-                    //     *show_info = true;
-                    //     ui.close_menu();
-                    // }
-                    match side_panel {
-                        SidePanel::None => {
-                            if ui.button("Show info").clicked() {
-                                *side_panel = SidePanel::Info;
-                                ui.close();
-                            }
-                            if ui.button("Show samples").clicked() {
-                                *side_panel = SidePanel::Samples;
-                                ui.close();
-                            }
-                        }
-                        SidePanel::Info => {
-                            if ui.button("Hide info").clicked() {
-                                *side_panel = SidePanel::None;
-                                ui.close();
-                            }
-                            if ui.button("Show samples").clicked() {
-                                *side_panel = SidePanel::Samples;
-                                ui.close();
-                            }
-                        }
-                        SidePanel::Samples => {
-                            if ui.button("Show info").clicked() {
-                                *side_panel = SidePanel::Info;
-                                ui.close();
-                            }
-                            if ui.button("Hide samples").clicked() {
-                                *side_panel = SidePanel::None;
-                                ui.close();
-                            }
-                        }
-                    }
-
-                    // ui.button("
+                    menu_action = wave_dispatch::render_view_menu(
+                        ui,
+                        *selected_activity == Some(Activity::Signals),
+                        matches!(*side_panel, SidePanel::Info),
+                        matches!(*side_panel, SidePanel::Samples),
+                        row_height,
+                    );
                 });
                 ui.menu_button("Help", |ui| {
-                    if ui.button("Keyboard shortcuts").clicked() {
-                        *show_key_help = true;
-                        ui.close();
-                    }
+                    menu_action = wave_dispatch::render_help_menu(ui);
                 });
             });
         });
+
+        match menu_action {
+            Some(MenuAction::OpenFile) => {
+                for effect in viewer.apply(ViewerCommand::RequestOpenFile) {
+                    if effect == EffectRequest::OpenFile {
+                        *a_future = Some(Box::pin(async {
+                            let handle = rfd::AsyncFileDialog::new().pick_file().await;
+                            if let Some(h) = &handle {
+                                let bytes = h.read().await;
+                                let mut cursor = std::io::Cursor::new(&bytes);
+                                let (signals, time) = vcd::read_clocked_vcd(&mut cursor).unwrap();
+                                Some(OpenedVcd {
+                                    waveform: mk_waveform(signals, time),
+                                })
+                            } else {
+                                None
+                            }
+                        }));
+                    }
+                }
+                ctx.request_repaint();
+            }
+            Some(MenuAction::OpenUrl) => url_window.open = true,
+            Some(MenuAction::ConnectLive) => live.open = true,
+            Some(MenuAction::Reset) => {
+                viewer.apply(ViewerCommand::ReplaceWaveform {
+                    waveform: Waveform::empty(),
+                    preserve_view: false,
+                });
+                *y_offset = 0.0;
+            }
+            Some(MenuAction::Quit) => ctx.send_viewport_cmd(ViewportCommand::Close),
+            Some(MenuAction::UndoDisplayChange) => {
+                viewer.apply(ViewerCommand::UndoDisplayChange);
+            }
+            Some(MenuAction::RedoDisplayChange) => {
+                viewer.apply(ViewerCommand::RedoDisplayChange);
+            }
+            Some(MenuAction::RemoveFocusedItem) => {
+                if let Some(id) = viewer.cursor_state().focused_item() {
+                    viewer.apply(ViewerCommand::RemoveDisplayedItem(id));
+                }
+            }
+            Some(MenuAction::ToggleSignalBrowser) => {
+                *selected_activity =
+                    (*selected_activity != Some(Activity::Signals)).then_some(Activity::Signals);
+            }
+            Some(MenuAction::FitTime) => {
+                viewer.apply(ViewerCommand::FitTime);
+            }
+            Some(MenuAction::ShowInfo) => *side_panel = SidePanel::Info,
+            Some(MenuAction::ShowSamples) => *side_panel = SidePanel::Samples,
+            Some(MenuAction::HideInspector) => *side_panel = SidePanel::None,
+            Some(MenuAction::ShowKeyHelp) => *show_key_help = true,
+            None => {}
+        }
 
         egui::Window::new("Keyboard shortcuts")
             .open(show_key_help)

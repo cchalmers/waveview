@@ -3,6 +3,7 @@
 use eframe::egui;
 use std::collections::HashSet;
 use waveview_model::search::SearchMatcher;
+use waveview_model::ui_types::MenuAction;
 use waveview_model::viewer::ViewerCommand;
 use waveview_model::viewer::ViewerState;
 use waveview_model::vim::{VimInput, VimState};
@@ -34,6 +35,32 @@ pub fn render_signal_button(
 #[unsafe(no_mangle)]
 pub fn render_signal_activity_button(ui: &mut egui::Ui, selected: bool) -> bool {
     waveview_ui::render_signal_activity_button(ui, selected)
+}
+
+#[unsafe(no_mangle)]
+pub fn render_file_menu(ui: &mut egui::Ui, native: bool) -> Option<MenuAction> {
+    waveview_ui::render_file_menu(ui, native)
+}
+
+#[unsafe(no_mangle)]
+pub fn render_edit_menu(ui: &mut egui::Ui, has_focused_item: bool) -> Option<MenuAction> {
+    waveview_ui::render_edit_menu(ui, has_focused_item)
+}
+
+#[unsafe(no_mangle)]
+pub fn render_view_menu(
+    ui: &mut egui::Ui,
+    signal_browser_open: bool,
+    info_open: bool,
+    samples_open: bool,
+    row_height: &mut f32,
+) -> Option<MenuAction> {
+    waveview_ui::render_view_menu(ui, signal_browser_open, info_open, samples_open, row_height)
+}
+
+#[unsafe(no_mangle)]
+pub fn render_help_menu(ui: &mut egui::Ui) -> Option<MenuAction> {
+    waveview_ui::render_help_menu(ui)
 }
 
 #[unsafe(no_mangle)]
