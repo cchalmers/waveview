@@ -1,0 +1,11 @@
+[package]
+name = "molt"
+version = "0.3.2-waveview.1"
+edition = "2018"
+publish = false
+license-file = "LICENSE.txt"
+description = "Minimal Waveview-maintained fork of the Molt Tcl interpreter"
+repository = "https://github.com/wduquette/molt"
+
+[dependencies]
+indexmap = "1.9.3"
