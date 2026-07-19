@@ -6,7 +6,6 @@ use std::ops::RangeInclusive;
 use waveview_model::vcd;
 
 pub struct Wave<'a> {
-    pixels_per_tick: f32,
     view_range: RangeInclusive<f32>,
     pub height: f32,
     name: &'a str,
@@ -45,14 +44,8 @@ pub struct Wave<'a> {
 
 impl<'a> Wave<'a> {
     // pub fn new(name: &'a str, scale: f32, view_range: RangeInclusive<f32>, wave_data: &'a [bool]) -> Self {
-    pub fn new(
-        name: &'a str,
-        pixels_per_tick: f32,
-        view_range: RangeInclusive<f32>,
-        wave_data: &'a vcd::Signal,
-    ) -> Self {
+    pub fn new(name: &'a str, view_range: RangeInclusive<f32>, wave_data: &'a vcd::Signal) -> Self {
         Wave {
-            pixels_per_tick,
             view_range,
             height: 32.0,
             wave_data,
@@ -62,7 +55,6 @@ impl<'a> Wave<'a> {
 
     pub fn ui(self, ui: &mut Ui) {
         let Self {
-            pixels_per_tick,
             view_range,
             height,
             wave_data,
@@ -81,9 +73,6 @@ impl<'a> Wave<'a> {
 
         let wave_painter = ui.painter().with_clip_rect(rect);
 
-        // Keep every row visually consistent, including signals with no transitions. A stroked,
-        // rounded rectangle made populated rows look like arbitrary boxed groups.
-        wave_painter.rect_filled(rect, CornerRadius::ZERO, ui.visuals().extreme_bg_color);
         if wave_data.is_empty() {
             return;
         }
@@ -191,29 +180,6 @@ impl<'a> Wave<'a> {
             )];
             wave_painter.extend(shapes);
         } else {
-            let x_taper = 0.1;
-            let mut pts_a = vec![];
-            let mut pts_b = vec![];
-
-            let mut values = wave_data.range(first_ix..last_ix).into_iter();
-            let (t0, _v0) = values.next().unwrap();
-            let mut x = t0 as f32;
-            // let mut y;
-            pts_a.push(PlotPoint::new(x, 0.5));
-            // pts_a.push(PlotPoint::new(x + 0.1, 0.1));
-            pts_b.push(PlotPoint::new(x, 0.5));
-            // pts_b.push(PlotPoint::new(x + 0.1, 0.9));
-            // let mut polarity = true;
-
-            for (t, _) in values {
-                pts_a.push(PlotPoint::new(x + x_taper, 0.1));
-                pts_b.push(PlotPoint::new(x + x_taper, 0.9));
-                x = t as f32;
-                pts_a.push(PlotPoint::new(x - x_taper, 0.1));
-                pts_a.push(PlotPoint::new(x, 0.5));
-                pts_b.push(PlotPoint::new(x - x_taper, 0.9));
-                pts_b.push(PlotPoint::new(x, 0.5));
-            }
             fn pos_from_val(
                 value: PlotPoint,
                 rect: Rect,
@@ -233,60 +199,123 @@ impl<'a> Wave<'a> {
             }
 
             let stroke = ui.style().visuals.widgets.active.bg_stroke;
-
-            let mut shapes = vec![
-                Shape::line(
-                    pts_a
-                        .iter()
-                        .map(|v| pos_from_val(*v, rect, &view_range))
-                        .collect(),
+            let mut shapes = vec![Shape::line_segment(
+                [
+                    pos_from_val(PlotPoint::new(*view_range.start(), 0.5), rect, &view_range),
+                    pos_from_val(PlotPoint::new(*view_range.end(), 0.5), rect, &view_range),
+                ],
+                stroke,
+            )];
+            for (time, _) in wave_data.range(first_ix.saturating_add(1)..last_ix) {
+                let time = time as f32;
+                shapes.push(Shape::line_segment(
+                    [
+                        pos_from_val(PlotPoint::new(time, 0.25), rect, &view_range),
+                        pos_from_val(PlotPoint::new(time, 0.75), rect, &view_range),
+                    ],
                     stroke,
-                ),
-                Shape::line(
-                    pts_b
-                        .iter()
-                        .map(|v| pos_from_val(*v, rect, &view_range))
-                        .collect(),
-                    stroke,
-                ),
-            ];
-            if pixels_per_tick > 1.6 {
-                let mut prev = &wave_data[first_ix];
-                // eprintln!("first_ix = {first_ix}, prev = {prev:?}");
-                let mut prev_start_x = first_ix as f32 + 0.5;
-                for (t, vs) in wave_data.range(first_ix + 1..last_ix) {
-                    let x = t as f32;
-                    let pos = pos_from_val(
-                        PlotPoint::new((prev_start_x + x) / 2.0, 0.5),
-                        rect,
-                        &view_range,
-                    );
-                    // TODO don't just use debug instance, have different format options
-                    let txt = format!("{prev:?}");
-                    let anchor = Align2::CENTER_CENTER;
-                    // let font = epaint::text::FontId::new(12.0, text::FontFamily::Monospace);
-                    // let sty = TextStyle::Monospace;
-                    let font = epaint::text::FontId::new(12.0, text::FontFamily::Monospace);
-                    let color = ui.style().visuals.text_color();
-                    // let fill_color = if true {
-                    //     egui::Color32::from_rgb(96, 119, 74)
-                    //     // Color32::from(Rgba::GREEN.multiply(0.2) + Rgba::from_white_alpha(0.08))
-                    // } else {
-                    //     Color32::from(Rgba::RED.multiply(0.3))
-                    // };
-
-                    let galley = ui.fonts_mut(|f| f.layout_no_wrap(txt, font, color));
-                    let rect = anchor.anchor_rect(Rect::from_min_size(pos, galley.size()));
-                    let fill_rect = rect.expand(2.0);
-                    if fill_rect.width() < (x - prev_start_x) * pixels_per_tick {
-                        // shapes.push(Shape::rect_filled(fill_rect, 2.0, fill_color));
-                        shapes.push(Shape::galley(rect.min, galley, color));
-                    }
-                    prev = vs;
-                    prev_start_x = x;
-                }
+                ));
             }
+            let mut add_value_label = |start: f32, end: f32, value: &[vcd::Value]| {
+                let start_pos = pos_from_val(PlotPoint::new(start, 0.5), rect, &view_range);
+                let end_pos = pos_from_val(PlotPoint::new(end, 0.5), rect, &view_range);
+                let available_width = (end_pos.x - start_pos.x).abs();
+                let text = format_vector_value(value);
+                let font = epaint::text::FontId::new(12.0, text::FontFamily::Monospace);
+                let color = ui.visuals().text_color();
+                let mut galley =
+                    ui.fonts_mut(|fonts| fonts.layout_no_wrap(text, font.clone(), color));
+                let mut label_color = color;
+                let mut horizontal_padding = 4.0;
+                if galley.size().x + horizontal_padding * 2.0 > available_width {
+                    label_color = ui.visuals().weak_text_color();
+                    horizontal_padding = 2.0;
+                    galley = ui
+                        .fonts_mut(|fonts| fonts.layout_no_wrap("…".to_owned(), font, label_color));
+                }
+                let text_rect = Align2::CENTER_CENTER.anchor_size(
+                    pos2((start_pos.x + end_pos.x) * 0.5, rect.center().y),
+                    galley.size(),
+                );
+                let fill_rect = text_rect.expand2(vec2(horizontal_padding, 2.0));
+                if fill_rect.width() <= available_width {
+                    shapes.push(Shape::rect_filled(
+                        fill_rect,
+                        CornerRadius::same(2),
+                        ui.visuals().extreme_bg_color,
+                    ));
+                    shapes.push(Shape::galley(text_rect.min, galley, label_color));
+                }
+            };
+
+            let mut previous = &wave_data[first_ix];
+            let mut segment_start = (*view_range.start()).max(first_ix as f32);
+            for (time, value) in wave_data.range(first_ix.saturating_add(1)..last_ix) {
+                let segment_end = time as f32;
+                add_value_label(segment_start, segment_end, previous);
+                previous = value;
+                segment_start = segment_end;
+            }
+            add_value_label(
+                segment_start,
+                (*view_range.end()).min(last_ix as f32),
+                previous,
+            );
             wave_painter.extend(shapes);
         }
+    }
+}
+
+fn format_vector_value(value: &[vcd::Value]) -> String {
+    let padding = (4 - value.len() % 4) % 4;
+    let mut digits = String::with_capacity(value.len().div_ceil(4));
+    for nibble in std::iter::repeat_n(vcd::Value::V0, padding)
+        .chain(value.iter().copied())
+        .collect::<Vec<_>>()
+        .chunks_exact(4)
+    {
+        let digit = if nibble.contains(&vcd::Value::X) {
+            'x'
+        } else if nibble.contains(&vcd::Value::Z) {
+            'z'
+        } else {
+            let number = nibble.iter().fold(0_u8, |number, bit| {
+                (number << 1) | u8::from(*bit == vcd::Value::V1)
+            });
+            char::from_digit(u32::from(number), 16).unwrap()
+        };
+        digits.push(digit);
+    }
+    format!("0x{digits}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn vector_values_are_compact_and_preserve_unknowns() {
+        assert_eq!(
+            format_vector_value(&[
+                vcd::Value::V1,
+                vcd::Value::V0,
+                vcd::Value::V1,
+                vcd::Value::V0,
+            ]),
+            "0xa"
+        );
+        assert_eq!(
+            format_vector_value(&[
+                vcd::Value::X,
+                vcd::Value::X,
+                vcd::Value::X,
+                vcd::Value::X,
+                vcd::Value::Z,
+                vcd::Value::Z,
+                vcd::Value::Z,
+                vcd::Value::Z,
+            ]),
+            "0xxz"
+        );
     }
 }

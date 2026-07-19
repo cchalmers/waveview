@@ -20,6 +20,12 @@ pub fn render(
         .filter_map(|item| item.signal_id().and_then(|id| viewer.waveform().signal(id)))
         .collect::<Vec<_>>();
 
+    ui.painter().rect_filled(
+        canvas_rect,
+        egui::CornerRadius::ZERO,
+        ui.visuals().extreme_bg_color,
+    );
+
     ui.skip_ahead_auto_ids(visible_rows.start);
     let response = ui.interact(
         interaction_rect,
@@ -36,12 +42,8 @@ pub fn render(
             .take(visible_rows.end)
             .skip(visible_rows.start)
         {
-            let mut wave = crate::wave::Wave::new(
-                signal.name(),
-                pixels_per_tick,
-                view_start..=view_end,
-                signal.signal(),
-            );
+            let mut wave =
+                crate::wave::Wave::new(signal.name(), view_start..=view_end, signal.signal());
             wave.height = row_height;
             wave.ui(ui);
         }
