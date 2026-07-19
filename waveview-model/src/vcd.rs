@@ -94,6 +94,17 @@ impl Signal {
             .unwrap_or(0)
     }
 
+    pub fn previous_transition(&self, time: u64) -> Option<u64> {
+        self.ix.range(..time).next_back().map(|(&time, _)| time)
+    }
+
+    pub fn next_transition(&self, time: u64) -> Option<u64> {
+        self.ix
+            .range((std::ops::Bound::Excluded(time), std::ops::Bound::Unbounded))
+            .next()
+            .map(|(&time, _)| time)
+    }
+
     // pub fn scalars(&self) -> impl Iterator<Item = (u64, Value)> + '_ {
     //     // assert!(self.width == 1);
     //     self.values.iter().map(|(&k, ix)| (k, v[0]))

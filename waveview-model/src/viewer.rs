@@ -297,9 +297,14 @@ impl ViewerState {
                 }
             }
             ViewerCommand::RemoveDisplayedItem(id) => {
-                if self.displayed_items.iter().any(|item| item.id == id) {
+                if let Some(removed_index) =
+                    self.displayed_items.iter().position(|item| item.id == id)
+                {
                     let mut items = self.displayed_items.clone();
                     items.retain(|item| item.id != id);
+                    self.cursor.focused_item = items
+                        .get(removed_index.min(items.len().saturating_sub(1)))
+                        .map(DisplayedItem::id);
                     self.commit_display_change(items);
                 }
             }
@@ -316,6 +321,16 @@ impl ViewerState {
                         .push(std::mem::replace(&mut self.displayed_items, next));
                     self.repair_focus();
                 }
+            }
+            ViewerCommand::ScrollDisplayedRows(delta) => {
+                return vec![EffectRequest::ScrollDisplayedRows(delta)];
+            }
+            ViewerCommand::ScrollDisplayedHalfPages(half_pages) => {
+                return vec![EffectRequest::ScrollDisplayedHalfPages(half_pages)];
+            }
+            ViewerCommand::BeginSearch => {
+                self.search.clear();
+                return vec![EffectRequest::FocusSearch];
             }
             ViewerCommand::RequestOpenFile => return vec![EffectRequest::OpenFile],
             ViewerCommand::RequestOpenUrl(url) => return vec![EffectRequest::OpenUrl(url)],
@@ -382,6 +397,9 @@ pub enum ViewerCommand {
     RemoveDisplayedItem(DisplayedItemId),
     UndoDisplayChange,
     RedoDisplayChange,
+    ScrollDisplayedRows(isize),
+    ScrollDisplayedHalfPages(isize),
+    BeginSearch,
     RequestOpenFile,
     RequestOpenUrl(String),
     RequestLiveConnection(String),
@@ -390,6 +408,9 @@ pub enum ViewerCommand {
 /// Imperative work performed by the stable application host rather than the reducer.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum EffectRequest {
+    ScrollDisplayedRows(isize),
+    ScrollDisplayedHalfPages(isize),
+    FocusSearch,
     OpenFile,
     OpenUrl(String),
     ConnectLive(String),
@@ -537,6 +558,17 @@ mod tests {
         );
     }
 
+    #[test]
+    fn beginning_a_search_clears_the_previous_query_and_requests_focus() {
+        let mut state = ViewerState::new(100);
+        state.apply(ViewerCommand::SetSearch("old query".to_owned()));
+
+        let effects = state.apply(ViewerCommand::BeginSearch);
+
+        assert_eq!(state.search(), "");
+        assert_eq!(effects, vec![EffectRequest::FocusSearch]);
+    }
+
     fn waveform_with_signals(count: usize) -> Waveform {
         Waveform::new(
             (0..count)
@@ -593,6 +625,18 @@ mod tests {
         assert_eq!(state.displayed_items().len(), 2);
         state.apply(ViewerCommand::RedoDisplayChange);
         assert_eq!(state.displayed_items().len(), 1);
+    }
+
+    #[test]
+    fn removing_a_middle_item_focuses_the_item_that_followed_it() {
+        let mut state = ViewerState::with_waveform(waveform_with_signals(4));
+        let removed = state.displayed_items()[1].id();
+        let following = state.displayed_items()[2].id();
+        state.apply(ViewerCommand::SetFocusedItem(removed));
+
+        state.apply(ViewerCommand::RemoveDisplayedItem(removed));
+
+        assert_eq!(state.cursor_state().focused_item(), Some(following));
     }
 
     #[test]
