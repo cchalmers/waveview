@@ -489,6 +489,40 @@ r1.5 !
     }
 
     #[test]
+    fn waveform_preserves_scope_variable_and_index_metadata() {
+        let input = "\
+$timescale 1 ns $end
+$scope module soc $end
+$scope task worker $end
+$var reg 8 ! accumulator [7:0] $end
+$upscope $end
+$upscope $end
+$enddefinitions $end
+#0
+b00000000 !
+";
+        let (signals, end_time) = parse(input);
+        let waveform = crate::waveform::Waveform::from_vcd(signals, end_time);
+        let signal = &waveform.signals()[0];
+
+        assert_eq!(signal.name(), "soc.worker.accumulator");
+        assert_eq!(
+            signal.metadata().kind(),
+            crate::waveform::VariableKind::Register
+        );
+        assert_eq!(
+            signal.metadata().index(),
+            Some(crate::waveform::SignalIndex::Range(7, 0))
+        );
+        assert_eq!(
+            waveform.hierarchy().scopes()[0].scopes()[0]
+                .metadata()
+                .kind(),
+            crate::waveform::ScopeKind::Task
+        );
+    }
+
+    #[test]
     fn reports_a_truncated_header() {
         assert!(read_clocked_vcd(&mut std::io::Cursor::new(b"$scope module top $end\n")).is_err());
     }

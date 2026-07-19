@@ -79,20 +79,13 @@ impl<'a> Wave<'a> {
         //     ui.add(egui::widgets::Label::new(name));
         // });
 
-        if wave_data.is_empty() {
-            return;
-        }
         let wave_painter = ui.painter().with_clip_rect(rect);
 
-        let show_background = true;
-        if show_background {
-            wave_painter.add(epaint::RectShape::new(
-                rect,
-                CornerRadius::same(2),
-                ui.visuals().extreme_bg_color,
-                ui.visuals().widgets.noninteractive.bg_stroke,
-                StrokeKind::Inside,
-            ));
+        // Keep every row visually consistent, including signals with no transitions. A stroked,
+        // rounded rectangle made populated rows look like arbitrary boxed groups.
+        wave_painter.rect_filled(rect, CornerRadius::ZERO, ui.visuals().extreme_bg_color);
+        if wave_data.is_empty() {
+            return;
         }
 
         // let mut last_high;

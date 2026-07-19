@@ -146,7 +146,9 @@ impl VimState {
                     RepeatableChange::MoveFocused(delta) => {
                         RepeatableChange::MoveFocused(delta.saturating_mul(count as isize))
                     }
-                    RepeatableChange::RemoveFocused => RepeatableChange::RemoveFocused,
+                    RepeatableChange::RemoveFocused(change_count) => {
+                        RepeatableChange::RemoveFocused(change_count.saturating_mul(count))
+                    }
                 };
                 self.commands_for_change(viewer, change)
             }
@@ -177,7 +179,10 @@ impl VimState {
         let pending = std::mem::take(&mut self.pending);
         match (pending.as_str(), character) {
             ("g", 'g') => self.focus_absolute(viewer, true),
-            ("d", 'd') => self.repeatable(viewer, RepeatableChange::RemoveFocused),
+            ("d", 'd') => {
+                let count = self.take_count();
+                self.repeatable(viewer, RepeatableChange::RemoveFocused(count))
+            }
             ("z", 'i') => {
                 let commands = self.zoom(viewer, true);
                 self.repeating_zoom = Some(true);
@@ -370,7 +375,21 @@ impl VimState {
             RepeatableChange::MoveFocused(delta) => {
                 vec![ViewerCommand::MoveDisplayedItem { id, delta }]
             }
-            RepeatableChange::RemoveFocused => vec![ViewerCommand::RemoveDisplayedItem(id)],
+            RepeatableChange::RemoveFocused(count) => {
+                let Some(start) = viewer
+                    .displayed_items()
+                    .iter()
+                    .position(|item| item.id() == id)
+                else {
+                    return Vec::new();
+                };
+                let ids = viewer.displayed_items()[start..]
+                    .iter()
+                    .take(count)
+                    .map(|item| item.id())
+                    .collect();
+                vec![ViewerCommand::RemoveDisplayedItems(ids)]
+            }
         }
     }
 }
@@ -497,12 +516,21 @@ mod tests {
         transitioning.insert_bit(10, crate::vcd::Value::V0);
         transitioning.insert_bit(30, crate::vcd::Value::V1);
         transitioning.insert_bit(70, crate::vcd::Value::V0);
-        ViewerState::with_waveform(Waveform::new(
+        let mut viewer = ViewerState::with_waveform(Waveform::new(
             std::iter::once(("top.s0".to_owned(), transitioning))
                 .chain((1..5).map(|index| (format!("top.s{index}"), Signal::new(1))))
                 .collect(),
             100,
-        ))
+        ));
+        viewer.apply(ViewerCommand::AddDisplayedSignals(
+            viewer
+                .waveform()
+                .signals()
+                .iter()
+                .map(|signal| signal.id())
+                .collect(),
+        ));
+        viewer
     }
 
     fn keys(state: &mut VimState, viewer: &ViewerState, inputs: &[VimInput]) -> Vec<ViewerCommand> {
@@ -557,6 +585,30 @@ mod tests {
     }
 
     #[test]
+    fn counted_dd_removes_the_focused_row_and_following_rows() {
+        let viewer = viewer();
+        let mut vim = VimState::default();
+
+        assert_eq!(
+            keys(
+                &mut vim,
+                &viewer,
+                &[
+                    VimInput::Char('3'),
+                    VimInput::Char('d'),
+                    VimInput::Char('d'),
+                ],
+            ),
+            vec![ViewerCommand::RemoveDisplayedItems(
+                viewer.displayed_items()[..3]
+                    .iter()
+                    .map(|item| item.id())
+                    .collect()
+            )]
+        );
+    }
+
+    #[test]
     fn repeat_replays_the_last_display_change_against_current_focus() {
         let mut viewer = viewer();
         let mut vim = VimState::default();
@@ -567,18 +619,18 @@ mod tests {
         );
         assert_eq!(
             commands,
-            vec![ViewerCommand::RemoveDisplayedItem(
-                viewer.displayed_items()[0].id()
-            )]
+            vec![ViewerCommand::RemoveDisplayedItems(vec![viewer
+                .displayed_items()[0]
+                .id()])]
         );
         for command in commands {
             viewer.apply(command);
         }
         assert_eq!(
             vim.handle(VimInput::Char('.'), false, &viewer),
-            vec![ViewerCommand::RemoveDisplayedItem(
-                viewer.displayed_items()[0].id()
-            )]
+            vec![ViewerCommand::RemoveDisplayedItems(vec![viewer
+                .displayed_items()[0]
+                .id()])]
         );
     }
 

@@ -171,6 +171,7 @@ pub struct ViewerState {
     search: String,
     display_undo: Vec<Vec<DisplayedItem>>,
     display_redo: Vec<Vec<DisplayedItem>>,
+    next_displayed_item_id: u64,
 }
 
 impl ViewerState {
@@ -180,6 +181,7 @@ impl ViewerState {
 
     pub fn with_waveform(waveform: Waveform) -> Self {
         let displayed_items = displayed_items_for(&waveform);
+        let next_displayed_item_id = displayed_items.len() as u64;
         let focused_item = displayed_items.first().map(DisplayedItem::id);
         let capture_end = waveform.end_time();
         Self {
@@ -193,6 +195,7 @@ impl ViewerState {
             search: String::new(),
             display_undo: Vec::new(),
             display_redo: Vec::new(),
+            next_displayed_item_id,
         }
     }
 
@@ -246,6 +249,7 @@ impl ViewerState {
                 self.search.clear();
                 self.display_undo.clear();
                 self.display_redo.clear();
+                self.next_displayed_item_id = self.displayed_items.len() as u64;
             }
             ViewerCommand::FitTime => self.viewport = TimeViewport::fit(self.capture_end()),
             ViewerCommand::PanTime(delta) => self.viewport.pan_by(delta, self.capture_end()),
@@ -279,6 +283,24 @@ impl ViewerState {
                 }
             }
             ViewerCommand::SetSearch(search) => self.search = search,
+            ViewerCommand::AddDisplayedSignals(signal_ids) => {
+                let mut existing = self
+                    .displayed_items
+                    .iter()
+                    .filter_map(DisplayedItem::signal_id)
+                    .collect::<HashSet<_>>();
+                let mut items = self.displayed_items.clone();
+                for signal_id in signal_ids {
+                    if self.waveform.signal(signal_id).is_some() && existing.insert(signal_id) {
+                        items.push(DisplayedItem {
+                            id: DisplayedItemId::new(self.next_displayed_item_id),
+                            kind: DisplayedItemKind::Signal(signal_id),
+                        });
+                        self.next_displayed_item_id += 1;
+                    }
+                }
+                self.commit_display_change(items);
+            }
             ViewerCommand::SetDisplayedOrder(order) => {
                 if is_valid_order(&self.displayed_items, &order) {
                     let mut old = self.displayed_items.clone();
@@ -304,16 +326,10 @@ impl ViewerState {
                 }
             }
             ViewerCommand::RemoveDisplayedItem(id) => {
-                if let Some(removed_index) =
-                    self.displayed_items.iter().position(|item| item.id == id)
-                {
-                    let mut items = self.displayed_items.clone();
-                    items.retain(|item| item.id != id);
-                    self.cursor.focused_item = items
-                        .get(removed_index.min(items.len().saturating_sub(1)))
-                        .map(DisplayedItem::id);
-                    self.commit_display_change(items);
-                }
+                self.remove_displayed_items(&HashSet::from([id]));
+            }
+            ViewerCommand::RemoveDisplayedItems(ids) => {
+                self.remove_displayed_items(&ids.into_iter().collect());
             }
             ViewerCommand::UndoDisplayChange => {
                 if let Some(previous) = self.display_undo.pop() {
@@ -374,6 +390,26 @@ impl ViewerState {
         }
     }
 
+    fn remove_displayed_items(&mut self, ids: &HashSet<DisplayedItemId>) {
+        let focused_index = self.cursor.focused_item.and_then(|focused| {
+            ids.contains(&focused)
+                .then(|| {
+                    self.displayed_items
+                        .iter()
+                        .position(|item| item.id == focused)
+                })
+                .flatten()
+        });
+        let mut items = self.displayed_items.clone();
+        items.retain(|item| !ids.contains(&item.id));
+        if let Some(index) = focused_index {
+            self.cursor.focused_item = items
+                .get(index.min(items.len().saturating_sub(1)))
+                .map(DisplayedItem::id);
+        }
+        self.commit_display_change(items);
+    }
+
     fn repair_focus(&mut self) {
         if self
             .cursor
@@ -412,12 +448,14 @@ pub enum ViewerCommand {
     EndMeasurement,
     SetFocusedItem(DisplayedItemId),
     SetSearch(String),
+    AddDisplayedSignals(Vec<SignalId>),
     SetDisplayedOrder(Vec<DisplayedItemId>),
     MoveDisplayedItem {
         id: DisplayedItemId,
         delta: isize,
     },
     RemoveDisplayedItem(DisplayedItemId),
+    RemoveDisplayedItems(Vec<DisplayedItemId>),
     UndoDisplayChange,
     RedoDisplayChange,
     ScrollDisplayedRows(isize),
@@ -463,6 +501,14 @@ fn finite_or(value: f64, fallback: f64) -> f64 {
     }
 }
 
+fn is_valid_order(items: &[DisplayedItem], order: &[DisplayedItemId]) -> bool {
+    items.len() == order.len()
+        && order.iter().copied().collect::<HashSet<_>>().len() == order.len()
+        && order
+            .iter()
+            .all(|id| items.iter().any(|item| item.id == *id))
+}
+
 fn displayed_items_for(waveform: &Waveform) -> Vec<DisplayedItem> {
     waveform
         .signals()
@@ -473,14 +519,6 @@ fn displayed_items_for(waveform: &Waveform) -> Vec<DisplayedItem> {
             kind: DisplayedItemKind::Signal(signal.id()),
         })
         .collect()
-}
-
-fn is_valid_order(items: &[DisplayedItem], order: &[DisplayedItemId]) -> bool {
-    items.len() == order.len()
-        && order.iter().copied().collect::<HashSet<_>>().len() == order.len()
-        && order
-            .iter()
-            .all(|id| items.iter().any(|item| item.id == *id))
 }
 
 #[cfg(test)]
@@ -576,6 +614,35 @@ mod tests {
     }
 
     #[test]
+    fn loaded_signals_are_displayed_and_can_be_removed_then_readded() {
+        let mut state = ViewerState::with_waveform(waveform_with_signals(3));
+        assert_eq!(state.displayed_items().len(), 3);
+        let removed_item = state.displayed_items()[1].id();
+        state.apply(ViewerCommand::RemoveDisplayedItem(removed_item));
+
+        state.apply(ViewerCommand::AddDisplayedSignals(vec![
+            SignalId::new(1),
+            SignalId::new(1),
+            SignalId::new(99),
+            SignalId::new(2),
+        ]));
+
+        assert_eq!(
+            state
+                .displayed_items()
+                .iter()
+                .filter_map(DisplayedItem::signal_id)
+                .collect::<Vec<_>>(),
+            vec![SignalId::new(0), SignalId::new(2), SignalId::new(1)]
+        );
+
+        state.apply(ViewerCommand::UndoDisplayChange);
+        assert_eq!(state.displayed_items().len(), 2);
+        state.apply(ViewerCommand::RedoDisplayChange);
+        assert_eq!(state.displayed_items().len(), 3);
+    }
+
+    #[test]
     fn effects_do_not_mutate_viewer_state() {
         let mut state = ViewerState::new(100);
         let before = state.clone();
@@ -606,7 +673,7 @@ mod tests {
 
     #[test]
     fn focused_name_copy_and_row_placement_are_ui_effects() {
-        let mut state = ViewerState::with_waveform(waveform_with_signals(2));
+        let mut state = state_with_signals(2);
 
         assert_eq!(
             state.apply(ViewerCommand::CopyFocusedName),
@@ -637,9 +704,21 @@ mod tests {
         )
     }
 
+    fn state_with_signals(count: usize) -> ViewerState {
+        let mut state = ViewerState::with_waveform(waveform_with_signals(count));
+        let signal_ids = state
+            .waveform()
+            .signals()
+            .iter()
+            .map(|signal| signal.id())
+            .collect();
+        state.apply(ViewerCommand::AddDisplayedSignals(signal_ids));
+        state
+    }
+
     #[test]
     fn displayed_order_accepts_only_complete_permutations() {
-        let mut state = ViewerState::with_waveform(waveform_with_signals(3));
+        let mut state = state_with_signals(3);
         let original: Vec<_> = state
             .displayed_items()
             .iter()
@@ -667,7 +746,7 @@ mod tests {
 
     #[test]
     fn removing_focused_item_cannot_leave_dangling_focus() {
-        let mut state = ViewerState::with_waveform(waveform_with_signals(2));
+        let mut state = state_with_signals(2);
         let first = state.displayed_items()[0].id();
         let second = state.displayed_items()[1].id();
         assert_eq!(state.cursor_state().focused_item(), Some(first));
@@ -688,7 +767,7 @@ mod tests {
 
     #[test]
     fn removing_a_middle_item_focuses_the_item_that_followed_it() {
-        let mut state = ViewerState::with_waveform(waveform_with_signals(4));
+        let mut state = state_with_signals(4);
         let removed = state.displayed_items()[1].id();
         let following = state.displayed_items()[2].id();
         state.apply(ViewerCommand::SetFocusedItem(removed));
@@ -696,6 +775,24 @@ mod tests {
         state.apply(ViewerCommand::RemoveDisplayedItem(removed));
 
         assert_eq!(state.cursor_state().focused_item(), Some(following));
+    }
+
+    #[test]
+    fn removing_multiple_items_is_one_undoable_display_change() {
+        let mut state = state_with_signals(4);
+        let removed = [
+            state.displayed_items()[1].id(),
+            state.displayed_items()[2].id(),
+        ];
+        let following = state.displayed_items()[3].id();
+        state.apply(ViewerCommand::SetFocusedItem(removed[0]));
+
+        state.apply(ViewerCommand::RemoveDisplayedItems(removed.to_vec()));
+        assert_eq!(state.displayed_items().len(), 2);
+        assert_eq!(state.cursor_state().focused_item(), Some(following));
+
+        state.apply(ViewerCommand::UndoDisplayChange);
+        assert_eq!(state.displayed_items().len(), 4);
     }
 
     #[test]

@@ -13,7 +13,7 @@ pub enum VimMode {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum RepeatableChange {
     MoveFocused(isize),
-    RemoveFocused,
+    RemoveFocused(usize),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
