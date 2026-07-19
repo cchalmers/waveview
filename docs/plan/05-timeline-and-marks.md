@@ -69,6 +69,9 @@ offer rebinding when a matching signal returns.
   linewise `'{mark}`, and previous-jump `` `` ``/`''` syntax run through the Vim command engine.
 - Exact jumps restore signal and time; linewise jumps restore the signal while preserving the current
   time. Both reveal the destination row, and previous-jump positions toggle in Vim fashion.
+- Mark jumps and `0`/`$` capture-bound motions populate a bounded jump list. Counted `Ctrl-O` and
+  `Ctrl-I` traverse older and newer exact positions, and taking a new jump after going backward
+  discards the abandoned forward branch.
 - Mark times are painted across the timeline and waveform canvas. `marks`, `delmarks <names>`, and
   `delmarks all` provide the initial Molt lifecycle and report unresolved removed signals safely.
 - Marks currently reset on waveform replacement; compatible-source preservation and unresolved-path

@@ -276,6 +276,8 @@ pub struct ViewerState {
     search: String,
     marks: BTreeMap<char, MarkPosition>,
     previous_jump: Option<MarkPosition>,
+    jump_list: Vec<MarkPosition>,
+    jump_index: Option<usize>,
     display_undo: Vec<Vec<DisplayedItem>>,
     display_redo: Vec<Vec<DisplayedItem>>,
     next_displayed_item_id: u64,
@@ -302,6 +304,8 @@ impl ViewerState {
             search: String::new(),
             marks: BTreeMap::new(),
             previous_jump: None,
+            jump_list: Vec::new(),
+            jump_index: None,
             display_undo: Vec::new(),
             display_redo: Vec::new(),
             next_displayed_item_id,
@@ -362,6 +366,8 @@ impl ViewerState {
                 self.search.clear();
                 self.marks.clear();
                 self.previous_jump = None;
+                self.jump_list.clear();
+                self.jump_index = None;
                 self.display_undo.clear();
                 self.display_redo.clear();
                 self.next_displayed_item_id = self.displayed_items.len() as u64;
@@ -373,6 +379,17 @@ impl ViewerState {
             }
             ViewerCommand::RevealTime(time) => {
                 self.viewport.reveal(time as f64, self.capture_end());
+            }
+            ViewerCommand::JumpToTime(time) => {
+                let time = time.min(self.capture_end());
+                if self.cursor.time != Some(time) {
+                    let origin = self.current_position();
+                    self.cursor.time = Some(time);
+                    self.viewport.reveal(time as f64, self.capture_end());
+                    if let Some(origin) = origin {
+                        self.record_jump(origin);
+                    }
+                }
             }
             ViewerCommand::SetCursor(time) => {
                 self.cursor.time = Some(time.min(self.capture_end()));
@@ -512,6 +529,9 @@ impl ViewerState {
                     return self.jump_to_position(position, exact, true);
                 }
             }
+            ViewerCommand::TraverseJumpList(delta) => {
+                return self.traverse_jump_list(delta);
+            }
             ViewerCommand::DeleteMarks(names) => {
                 for name in names {
                     self.marks.remove(&name);
@@ -643,9 +663,48 @@ impl ViewerState {
             self.viewport.reveal(time as f64, self.capture_end());
         }
         if record_previous {
-            self.previous_jump = previous;
+            if let Some(previous) = previous {
+                self.record_jump(previous);
+            }
         }
         vec![EffectRequest::RevealFocusedItem(FocusPlacement::Center)]
+    }
+
+    fn record_jump(&mut self, origin: MarkPosition) {
+        if let Some(index) = self.jump_index.take() {
+            self.jump_list.truncate(index.saturating_add(1));
+        }
+        if self.jump_list.last() != Some(&origin) {
+            self.jump_list.push(origin);
+        }
+        const MAX_JUMPS: usize = 100;
+        if self.jump_list.len() > MAX_JUMPS {
+            self.jump_list.remove(0);
+        }
+        self.previous_jump = Some(origin);
+    }
+
+    fn traverse_jump_list(&mut self, delta: isize) -> Vec<EffectRequest> {
+        let Some(current) = self.current_position() else {
+            return Vec::new();
+        };
+        if self.jump_index.is_none() {
+            if self.jump_list.last() != Some(&current) {
+                self.jump_list.push(current);
+            }
+            self.jump_index = self.jump_list.len().checked_sub(1);
+        }
+        let Some(index) = self.jump_index else {
+            return Vec::new();
+        };
+        let target = index
+            .saturating_add_signed(delta)
+            .min(self.jump_list.len().saturating_sub(1));
+        if target == index {
+            return Vec::new();
+        }
+        self.jump_index = Some(target);
+        self.jump_to_position(self.jump_list[target], true, false)
     }
 
     fn mark_list(&self) -> String {
@@ -722,6 +781,7 @@ pub enum ViewerCommand {
         factor: f64,
     },
     RevealTime(u64),
+    JumpToTime(u64),
     SetCursor(u64),
     ClearCursor,
     BeginMeasurement(u64),
@@ -761,6 +821,7 @@ pub enum ViewerCommand {
     JumpToPrevious {
         exact: bool,
     },
+    TraverseJumpList(isize),
     DeleteMarks(Vec<char>),
     ClearMarks,
     RequestMarkList,
@@ -1055,6 +1116,55 @@ mod tests {
         ));
         state.apply(ViewerCommand::DeleteMarks(vec!['b']));
         assert!(state.marks().is_empty());
+    }
+
+    #[test]
+    fn jump_list_traverses_older_and_newer_positions() {
+        let mut state = state_with_signals(3);
+        let first = state.displayed_items()[0].id();
+        let second = state.displayed_items()[1].id();
+        let third = state.displayed_items()[2].id();
+
+        state.apply(ViewerCommand::SetCursor(10));
+        state.apply(ViewerCommand::SetMark('a'));
+        state.apply(ViewerCommand::SetFocusedItem(second));
+        state.apply(ViewerCommand::SetCursor(20));
+        state.apply(ViewerCommand::SetMark('b'));
+        state.apply(ViewerCommand::SetFocusedItem(third));
+        state.apply(ViewerCommand::SetCursor(30));
+
+        state.apply(ViewerCommand::JumpToMark {
+            name: 'a',
+            exact: true,
+        });
+        state.apply(ViewerCommand::JumpToMark {
+            name: 'b',
+            exact: true,
+        });
+        state.apply(ViewerCommand::TraverseJumpList(-1));
+        assert_eq!(state.cursor_state().focused_item(), Some(first));
+        assert_eq!(state.cursor(), Some(10));
+        state.apply(ViewerCommand::TraverseJumpList(-1));
+        assert_eq!(state.cursor_state().focused_item(), Some(third));
+        assert_eq!(state.cursor(), Some(30));
+        state.apply(ViewerCommand::TraverseJumpList(2));
+        assert_eq!(state.cursor_state().focused_item(), Some(second));
+        assert_eq!(state.cursor(), Some(20));
+    }
+
+    #[test]
+    fn capture_start_and_end_are_jump_list_positions() {
+        let mut state = state_with_signals(1);
+        state.apply(ViewerCommand::SetCursor(50));
+        state.apply(ViewerCommand::JumpToTime(0));
+        state.apply(ViewerCommand::JumpToTime(100));
+
+        state.apply(ViewerCommand::TraverseJumpList(-1));
+        assert_eq!(state.cursor(), Some(0));
+        state.apply(ViewerCommand::TraverseJumpList(-1));
+        assert_eq!(state.cursor(), Some(50));
+        state.apply(ViewerCommand::TraverseJumpList(2));
+        assert_eq!(state.cursor(), Some(100));
     }
 
     #[test]

@@ -1569,6 +1569,8 @@ fn ctrl_key_character(key: egui::Key) -> Option<char> {
         egui::Key::D => Some('d'),
         egui::Key::E => Some('e'),
         egui::Key::F => Some('f'),
+        egui::Key::I => Some('i'),
+        egui::Key::O => Some('o'),
         egui::Key::R => Some('r'),
         egui::Key::U => Some('u'),
         egui::Key::Y => Some('y'),

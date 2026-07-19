@@ -119,15 +119,11 @@ impl VimState {
             }
             '0' => {
                 self.cancel();
-                vec![ViewerCommand::SetCursor(0), ViewerCommand::RevealTime(0)]
+                vec![ViewerCommand::JumpToTime(0)]
             }
             '$' => {
                 self.cancel();
-                let end = viewer.capture_end();
-                vec![
-                    ViewerCommand::SetCursor(end),
-                    ViewerCommand::RevealTime(end),
-                ]
+                vec![ViewerCommand::JumpToTime(viewer.capture_end())]
             }
             'J' => {
                 let count = self.take_count() as isize;
@@ -175,6 +171,8 @@ impl VimState {
             'e' => vec![ViewerCommand::ScrollDisplayedRows(count as isize)],
             'y' => vec![ViewerCommand::ScrollDisplayedRows(-(count as isize))],
             'r' => vec![ViewerCommand::RedoDisplayChange],
+            'o' => vec![ViewerCommand::TraverseJumpList(-(count as isize))],
+            'i' => vec![ViewerCommand::TraverseJumpList(count as isize)],
             _ => Vec::new(),
         }
     }
@@ -491,6 +489,10 @@ pub const NORMAL_BINDINGS: &[Binding] = &[
         description: "return to previous jump position",
     },
     Binding {
+        keys: "Ctrl-O / Ctrl-I",
+        description: "move to older / newer jump-list position",
+    },
+    Binding {
         keys: "Ctrl-F / Ctrl-B",
         description: "pan one viewport forward / backward",
     },
@@ -738,6 +740,18 @@ mod tests {
             ),
             vec![ViewerCommand::JumpToPrevious { exact: true }]
         );
+        assert_eq!(
+            keys(
+                &mut vim,
+                &viewer,
+                &[VimInput::Char('2'), VimInput::Ctrl('o')]
+            ),
+            vec![ViewerCommand::TraverseJumpList(-2)]
+        );
+        assert_eq!(
+            vim.handle(VimInput::Ctrl('i'), false, &viewer),
+            vec![ViewerCommand::TraverseJumpList(1)]
+        );
     }
 
     #[test]
@@ -747,6 +761,20 @@ mod tests {
         assert_eq!(
             vim.handle(VimInput::Char('l'), false, &viewer),
             vec![ViewerCommand::SetCursor(55), ViewerCommand::RevealTime(55)]
+        );
+    }
+
+    #[test]
+    fn capture_bound_motions_are_recorded_jumps() {
+        let viewer = viewer();
+        let mut vim = VimState::default();
+        assert_eq!(
+            vim.handle(VimInput::Char('0'), false, &viewer),
+            vec![ViewerCommand::JumpToTime(0)]
+        );
+        assert_eq!(
+            vim.handle(VimInput::Char('$'), false, &viewer),
+            vec![ViewerCommand::JumpToTime(100)]
         );
     }
 
