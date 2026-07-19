@@ -1038,6 +1038,9 @@ impl eframe::App for TemplateApp {
                                             if wave_dispatch::render_signal_button(
                                                 ui,
                                                 signal.name(),
+                                                viewer.cursor().and_then(|time| {
+                                                    signal.signal().value_at(time)
+                                                }),
                                                 *row_height,
                                                 focused_item == Some(item.id()),
                                                 search_matcher.as_ref(),

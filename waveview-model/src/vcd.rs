@@ -105,6 +105,13 @@ impl Signal {
             .map(|(&time, _)| time)
     }
 
+    pub fn value_at(&self, time: u64) -> Option<&[Value]> {
+        let (_, &start) = self.ix.range(..=time).next_back()?;
+        match &self.values {
+            SignalValues::Values(values) => values.get(start..start + self.width),
+        }
+    }
+
     // pub fn scalars(&self) -> impl Iterator<Item = (u64, Value)> + '_ {
     //     // assert!(self.width == 1);
     //     self.values.iter().map(|(&k, ix)| (k, v[0]))
@@ -468,6 +475,9 @@ $enddefinitions $end
             vector_at_five,
             [Value::V1, Value::V0, Value::V1, Value::V0,]
         );
+        assert_eq!(signals[1].1.value_at(4), Some(&[Value::V0; 4][..]));
+        assert_eq!(signals[1].1.value_at(5), Some(&vector_at_five[..]));
+        assert_eq!(signals[1].1.value_at(100), Some(&vector_at_five[..]));
     }
 
     #[test]

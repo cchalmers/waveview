@@ -51,15 +51,16 @@ pub fn handle_vim_input(
 pub fn render_signal_button(
     ui: &mut egui::Ui,
     name: &str,
+    value: Option<&[waveview_model::vcd::Value]>,
     height: f32,
     selected: bool,
     matcher: Option<&SearchMatcher>,
 ) -> bool {
     #[cfg(all(feature = "reload", not(target_arch = "wasm32")))]
-    return hot_ui::render_signal_button(ui, name, height, selected, matcher);
+    return hot_ui::render_signal_button(ui, name, value, height, selected, matcher);
 
     #[cfg(not(all(feature = "reload", not(target_arch = "wasm32"))))]
-    waveview_ui::render_signal_button(ui, name, height, selected, matcher)
+    waveview_ui::render_signal_button(ui, name, value, height, selected, matcher)
 }
 
 pub fn render_signal_activity_button(ui: &mut egui::Ui, selected: bool) -> bool {

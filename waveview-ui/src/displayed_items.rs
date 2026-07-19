@@ -1,19 +1,25 @@
 use eframe::egui;
 use waveview_model::search::SearchMatcher;
+use waveview_model::vcd::Value;
 
 pub fn render_signal_button(
     ui: &mut egui::Ui,
     name: &str,
+    value: Option<&[Value]>,
     height: f32,
     selected: bool,
     matcher: Option<&SearchMatcher>,
 ) -> bool {
     let text = highlighted_signal_name(ui, name, matcher);
-    ui.add_sized(
-        egui::vec2(ui.available_width(), height),
-        egui::Button::selectable(selected, text).truncate(),
-    )
-    .clicked()
+    let mut button = egui::Button::selectable(selected, text)
+        .min_size(egui::vec2(ui.available_width(), height))
+        .truncate();
+    if let Some(value) = value {
+        let text = egui::RichText::new(crate::value::format(value)).monospace();
+        button = button.right_text(if selected { text.strong() } else { text });
+    }
+    ui.add_sized(egui::vec2(ui.available_width(), height), button)
+        .clicked()
 }
 
 fn highlighted_signal_name(

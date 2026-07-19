@@ -26,11 +26,12 @@ pub fn handle_vim_input(
 pub fn render_signal_button(
     ui: &mut egui::Ui,
     name: &str,
+    value: Option<&[waveview_model::vcd::Value]>,
     height: f32,
     selected: bool,
     matcher: Option<&SearchMatcher>,
 ) -> bool {
-    waveview_ui::render_signal_button(ui, name, height, selected, matcher)
+    waveview_ui::render_signal_button(ui, name, value, height, selected, matcher)
 }
 
 #[unsafe(no_mangle)]

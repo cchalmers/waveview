@@ -27,9 +27,9 @@ and a separate flat displayed-signal list.
 
 ## Values and appearance
 
-- [ ] Display each focused/visible signal's value at the primary cursor.
+- [x] Display each focused/visible signal's value at the primary cursor.
 - [ ] Implement binary, hexadecimal, unsigned, signed, and ASCII vector formats.
-- [ ] Give unknown and high-impedance values distinct rendering and text.
+- [x] Give unknown and high-impedance values distinct rendering and text.
 - [ ] Add per-item color, height, alias, and format state.
 - [ ] Render scalar, vector, group, divider, and timeline rows through one displayed-item layout.
 
@@ -60,3 +60,8 @@ and a separate flat displayed-signal list.
 - New captures display every signal by default. Re-adds are reducer commands, deduplicate signals,
   allocate stable displayed-item IDs, and participate in display undo/redo.
 - Counted `dd` removes the focused row and following rows as one undoable display change.
+- When a primary cursor is set, every visible signal row shows its value at that exact time in a
+  compact right-aligned column. Lookup is inclusive at transitions and values remain available
+  after a signal's final transition; scalar and four-state hexadecimal formatting is reloadable.
+- Unknown spans use a muted colored rail and faint wash; high-impedance spans use a dashed rail.
+  Both remain recognizable when a segment is too narrow to show its textual value.
