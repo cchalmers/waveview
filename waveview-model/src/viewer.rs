@@ -139,6 +139,13 @@ pub struct CursorState {
     focused_item: Option<DisplayedItemId>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum FocusPlacement {
+    Top,
+    Center,
+    Bottom,
+}
+
 impl CursorState {
     pub fn time(&self) -> Option<u64> {
         self.time
@@ -332,6 +339,22 @@ impl ViewerState {
                 self.search.clear();
                 return vec![EffectRequest::FocusSearch];
             }
+            ViewerCommand::RevealFocusedItem(placement) => {
+                return vec![EffectRequest::RevealFocusedItem(placement)];
+            }
+            ViewerCommand::SelectVisibleRow { placement, count } => {
+                return vec![EffectRequest::SelectVisibleRow { placement, count }];
+            }
+            ViewerCommand::CopyFocusedName => {
+                let name = self
+                    .cursor
+                    .focused_item
+                    .and_then(|focused| self.displayed_items.iter().find(|item| item.id == focused))
+                    .and_then(DisplayedItem::signal_id)
+                    .and_then(|id| self.waveform.signal(id))
+                    .map(|signal| signal.name().to_owned());
+                return name.map_or_else(Vec::new, |name| vec![EffectRequest::CopyText(name)]);
+            }
             ViewerCommand::RequestOpenFile => return vec![EffectRequest::OpenFile],
             ViewerCommand::RequestOpenUrl(url) => return vec![EffectRequest::OpenUrl(url)],
             ViewerCommand::RequestLiveConnection(url) => {
@@ -400,6 +423,12 @@ pub enum ViewerCommand {
     ScrollDisplayedRows(isize),
     ScrollDisplayedHalfPages(isize),
     BeginSearch,
+    RevealFocusedItem(FocusPlacement),
+    SelectVisibleRow {
+        placement: FocusPlacement,
+        count: usize,
+    },
+    CopyFocusedName,
     RequestOpenFile,
     RequestOpenUrl(String),
     RequestLiveConnection(String),
@@ -411,6 +440,12 @@ pub enum EffectRequest {
     ScrollDisplayedRows(isize),
     ScrollDisplayedHalfPages(isize),
     FocusSearch,
+    RevealFocusedItem(FocusPlacement),
+    SelectVisibleRow {
+        placement: FocusPlacement,
+        count: usize,
+    },
+    CopyText(String),
     OpenFile,
     OpenUrl(String),
     ConnectLive(String),
@@ -567,6 +602,30 @@ mod tests {
 
         assert_eq!(state.search(), "");
         assert_eq!(effects, vec![EffectRequest::FocusSearch]);
+    }
+
+    #[test]
+    fn focused_name_copy_and_row_placement_are_ui_effects() {
+        let mut state = ViewerState::with_waveform(waveform_with_signals(2));
+
+        assert_eq!(
+            state.apply(ViewerCommand::CopyFocusedName),
+            vec![EffectRequest::CopyText("signal_0".to_owned())]
+        );
+        assert_eq!(
+            state.apply(ViewerCommand::RevealFocusedItem(FocusPlacement::Center)),
+            vec![EffectRequest::RevealFocusedItem(FocusPlacement::Center)]
+        );
+        assert_eq!(
+            state.apply(ViewerCommand::SelectVisibleRow {
+                placement: FocusPlacement::Top,
+                count: 2,
+            }),
+            vec![EffectRequest::SelectVisibleRow {
+                placement: FocusPlacement::Top,
+                count: 2,
+            }]
+        );
     }
 
     fn waveform_with_signals(count: usize) -> Waveform {

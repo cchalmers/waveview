@@ -3,7 +3,10 @@ use crate::wave_dispatch;
 use eframe::egui;
 use eframe::egui::NumExt;
 use egui::*;
-use waveview_model::viewer::{DisplayedItem, EffectRequest, ViewerCommand, ViewerState};
+use waveview_model::search::{SearchHistory, SearchMatcher};
+use waveview_model::viewer::{
+    DisplayedItem, EffectRequest, FocusPlacement, ViewerCommand, ViewerState,
+};
 use waveview_model::vim::{VimInput, VimState, NORMAL_BINDINGS};
 use waveview_model::waveform::Waveform;
 
@@ -40,6 +43,11 @@ pub struct TemplateApp {
     vim: VimState,
     #[serde(skip)]
     show_key_help: bool,
+    #[serde(skip)]
+    status_message: Option<String>,
+    #[serde(skip)]
+    status_expires_at: f64,
+    search_history: SearchHistory,
 }
 
 impl Default for TemplateApp {
@@ -77,6 +85,9 @@ impl Default for TemplateApp {
             },
             vim: VimState::default(),
             show_key_help: false,
+            status_message: None,
+            status_expires_at: 0.0,
+            search_history: SearchHistory::default(),
         }
     }
 }
@@ -176,6 +187,9 @@ impl TemplateApp {
             info: Info { rect: Rect::NOTHING, min_rect: Rect::NOTHING, max_rect: Rect::NOTHING, viewport: Rect::NOTHING, pixels_per_tick: 0.0 },
             vim: VimState::default(),
             show_key_help: false,
+            status_message: None,
+            status_expires_at: 0.0,
+            search_history: SearchHistory::default(),
         }
     }
 }
@@ -305,7 +319,14 @@ impl eframe::App for TemplateApp {
             info,
             vim,
             show_key_help,
+            status_message,
+            status_expires_at,
+            search_history,
         } = self;
+        let now = ctx.input(|input| input.time);
+        if status_message.is_some() && now >= *status_expires_at {
+            *status_message = None;
+        }
 
         {
             let mut dl = download.lock().unwrap();
@@ -385,21 +406,31 @@ impl eframe::App for TemplateApp {
         let search_inputs = take_search_inputs(&ctx, search_has_focus);
         let mut reveal_keyboard_focus = false;
         let mut keyboard_half_page_scroll = 0_isize;
+        let mut keyboard_focus_placement = None;
+        let mut keyboard_select_visible = None;
         let mut force_vertical_scroll = false;
         for input in search_inputs {
             match input {
                 SearchInput::Previous => {
-                    if let Some(query) = vim.search_history_previous(viewer.search()) {
+                    if let Some(query) = search_history.previous(viewer.search()) {
                         viewer.apply(ViewerCommand::SetSearch(query));
+                        if focus_first_search_match(viewer) {
+                            reveal_keyboard_focus = true;
+                            force_vertical_scroll = true;
+                        }
                     }
                 }
                 SearchInput::Next => {
-                    if let Some(query) = vim.search_history_next() {
+                    if let Some(query) = search_history.newer() {
                         viewer.apply(ViewerCommand::SetSearch(query));
+                        if focus_first_search_match(viewer) {
+                            reveal_keyboard_focus = true;
+                            force_vertical_scroll = true;
+                        }
                     }
                 }
                 SearchInput::Accept => {
-                    vim.accept_search(viewer.search());
+                    search_history.accept(viewer.search());
                     if let Some(focused) = ctx.memory(|memory| memory.focused()) {
                         ctx.memory_mut(|memory| memory.surrender_focus(focused));
                     }
@@ -442,7 +473,21 @@ impl eframe::App for TemplateApp {
                             force_vertical_scroll = true;
                         }
                         EffectRequest::FocusSearch => {
+                            search_history.reset_navigation();
                             ctx.memory_mut(|memory| memory.request_focus(signal_search_id()));
+                        }
+                        EffectRequest::RevealFocusedItem(placement) => {
+                            keyboard_focus_placement = Some(placement);
+                            force_vertical_scroll = true;
+                        }
+                        EffectRequest::SelectVisibleRow { placement, count } => {
+                            keyboard_select_visible = Some((placement, count));
+                        }
+                        EffectRequest::CopyText(text) => {
+                            ctx.copy_text(text.clone());
+                            *status_message = Some(format!("copied {text}"));
+                            *status_expires_at = now + 2.0;
+                            ctx.request_repaint();
                         }
                         EffectRequest::OpenFile
                         | EffectRequest::OpenUrl(_)
@@ -516,7 +561,7 @@ impl eframe::App for TemplateApp {
                         ui.close();
                     }
                     if let Some(id) = viewer.cursor_state().focused_item() {
-                        if ui.button("Remove focused signal").clicked() {
+                        if ui.button("Remove selected signal").clicked() {
                             viewer.apply(ViewerCommand::RemoveDisplayedItem(id));
                             ui.close();
                         }
@@ -651,19 +696,45 @@ impl eframe::App for TemplateApp {
                     ui.separator();
                     ui.monospace(pending);
                 }
+                if let Some(message) = status_message.as_deref() {
+                    ui.separator();
+                    ui.label(message);
+                    ui.ctx()
+                        .request_repaint_after(std::time::Duration::from_secs_f64(
+                            (*status_expires_at - now).max(0.0),
+                        ));
+                }
             });
         });
+
+        if let Some((placement, count)) = keyboard_select_visible {
+            let row_span = *row_height + root_ui.spacing().item_spacing.y;
+            let list_height = (root_ui.available_height() - timeline_height).max(row_span);
+            let ids = viewer
+                .displayed_items()
+                .iter()
+                .map(DisplayedItem::id)
+                .collect::<Vec<_>>();
+            if !ids.is_empty() {
+                let first = (*y_offset / row_span).ceil() as usize;
+                let last = ((*y_offset + list_height - *row_height) / row_span).floor() as usize;
+                let middle = ((*y_offset + list_height * 0.5) / row_span).floor() as usize;
+                let count_offset = count.saturating_sub(1);
+                let index = match placement {
+                    FocusPlacement::Top => first.saturating_add(count_offset),
+                    FocusPlacement::Center => middle,
+                    FocusPlacement::Bottom => last.saturating_sub(count_offset),
+                }
+                .min(ids.len() - 1);
+                viewer.apply(ViewerCommand::SetFocusedItem(ids[index]));
+            }
+        }
 
         if keyboard_half_page_scroll != 0 {
             let row_span = *row_height + root_ui.spacing().item_spacing.y;
             let visible_ids = viewer
                 .displayed_items()
                 .iter()
-                .filter(|item| {
-                    item.signal_id()
-                        .and_then(|id| viewer.waveform().signal(id))
-                        .is_some_and(|signal| signal.name().contains(viewer.search()))
-                })
                 .map(DisplayedItem::id)
                 .collect::<Vec<_>>();
             if let Some(current) = viewer
@@ -679,6 +750,30 @@ impl eframe::App for TemplateApp {
                     .min(visible_ids.len().saturating_sub(1));
                 viewer.apply(ViewerCommand::SetFocusedItem(visible_ids[target]));
                 *y_offset = (*y_offset + row_delta as f32 * row_span).max(0.0);
+                reveal_keyboard_focus = true;
+            }
+        }
+        if let Some(placement) = keyboard_focus_placement {
+            let row_span = *row_height + root_ui.spacing().item_spacing.y;
+            let visible_ids = viewer
+                .displayed_items()
+                .iter()
+                .map(DisplayedItem::id)
+                .collect::<Vec<_>>();
+            if let Some(index) = viewer
+                .cursor_state()
+                .focused_item()
+                .and_then(|focused| visible_ids.iter().position(|id| *id == focused))
+            {
+                let list_height = (root_ui.available_height() - timeline_height).max(row_span);
+                let row_top = index as f32 * row_span;
+                let row_bottom = row_top + *row_height;
+                *y_offset = match placement {
+                    FocusPlacement::Top => row_top,
+                    FocusPlacement::Center => (row_top + row_bottom - list_height) * 0.5,
+                    FocusPlacement::Bottom => row_bottom - list_height,
+                }
+                .max(0.0);
                 reveal_keyboard_focus = true;
             }
         }
@@ -706,6 +801,7 @@ impl eframe::App for TemplateApp {
                     },
                 );
                 let rows_top = ui.next_widget_position().y;
+                let search_matcher = SearchMatcher::new(&search_text);
 
                 let spacing = ui.spacing().item_spacing;
                 let row_height_with_spacing = *row_height + spacing.y;
@@ -728,15 +824,7 @@ impl eframe::App for TemplateApp {
 
                 content_clip_rect.min.y = rows_top;
                 ui.set_clip_rect(content_clip_rect);
-                let matches_search = |item: &DisplayedItem| {
-                    item.signal_id()
-                        .and_then(|id| viewer.waveform().signal(id))
-                        .is_some_and(|signal| signal.name().contains(&search_text))
-                };
-                let num_rows = displayed_items
-                    .iter()
-                    .filter(|item| matches_search(item))
-                    .count();
+                let num_rows = displayed_items.len();
                 ui.set_height(
                     (row_height_with_spacing * num_rows as f32 - spacing.y).at_least(0.0),
                 );
@@ -758,89 +846,64 @@ impl eframe::App for TemplateApp {
 
                 // let rect = egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), y_min..=y_max);
 
-                if search_text.is_empty() {
-                    let response = egui_dnd::dnd(&mut ui, "dnd").show_custom(|ui, iter| {
-                        if min_row > 0 {
-                            ui.add_space(row_height_with_spacing * min_row as f32);
-                        }
-                        for (i, item) in displayed_items
-                            .iter()
-                            .enumerate()
-                            .take(max_row)
-                            .skip(min_row)
-                        {
-                            iter.next(ui, egui::Id::new(item.id()), i, true, |ui, item_handle| {
-                                item_handle.ui(ui, |ui, handle, _state| {
-                                    ui.horizontal(|ui| {
-                                        ui.set_height(*row_height);
-                                        handle.ui(ui, |ui| {
-                                            if let Some(signal) = item
-                                                .signal_id()
-                                                .and_then(|id| viewer.waveform().signal(id))
-                                            {
-                                                let size =
-                                                    egui::vec2(ui.available_width(), *row_height);
-                                                if ui
-                                                    .add_sized(
-                                                        size,
-                                                        egui::Button::selectable(
-                                                            focused_item == Some(item.id()),
-                                                            signal.name(),
-                                                        )
-                                                        .truncate(),
-                                                    )
-                                                    .clicked()
-                                                {
-                                                    requested_focus = Some(item.id());
-                                                }
-                                            }
-                                        });
-                                    });
-                                })
-                            });
-                        }
-                    });
-                    if let Some(update) = response.final_update() {
-                        egui_dnd::utils::shift_vec(update.from, update.to, &mut displayed_items);
-                    }
-                } else {
+                let response = egui_dnd::dnd(&mut ui, "dnd").show_custom(|ui, iter| {
                     if min_row > 0 {
                         ui.add_space(row_height_with_spacing * min_row as f32);
                     }
-                    for item in displayed_items
+                    for (i, item) in displayed_items
                         .iter()
-                        .filter(|item| matches_search(item))
+                        .enumerate()
                         .take(max_row)
                         .skip(min_row)
                     {
-                        ui.horizontal(|ui| {
-                            ui.set_height(*row_height);
-                            if let Some(signal) =
-                                item.signal_id().and_then(|id| viewer.waveform().signal(id))
-                            {
-                                let size = egui::vec2(ui.available_width(), *row_height);
-                                if ui
-                                    .add_sized(
-                                        size,
-                                        egui::Button::selectable(
-                                            focused_item == Some(item.id()),
-                                            signal.name(),
-                                        )
-                                        .truncate(),
-                                    )
-                                    .clicked()
-                                {
-                                    requested_focus = Some(item.id());
-                                }
-                            }
+                        iter.next(ui, egui::Id::new(item.id()), i, true, |ui, item_handle| {
+                            item_handle.ui(ui, |ui, handle, _state| {
+                                ui.horizontal(|ui| {
+                                    ui.set_height(*row_height);
+                                    handle.ui(ui, |ui| {
+                                        if let Some(signal) = item
+                                            .signal_id()
+                                            .and_then(|id| viewer.waveform().signal(id))
+                                        {
+                                            let size =
+                                                egui::vec2(ui.available_width(), *row_height);
+                                            let text = highlighted_signal_name(
+                                                ui,
+                                                signal.name(),
+                                                search_matcher.as_ref(),
+                                            );
+                                            if ui
+                                                .add_sized(
+                                                    size,
+                                                    egui::Button::selectable(
+                                                        focused_item == Some(item.id()),
+                                                        text,
+                                                    )
+                                                    .truncate(),
+                                                )
+                                                .clicked()
+                                            {
+                                                requested_focus = Some(item.id());
+                                            }
+                                        }
+                                    });
+                                });
+                            })
                         });
                     }
+                });
+                if let Some(update) = response.final_update() {
+                    egui_dnd::utils::shift_vec(update.from, update.to, &mut displayed_items);
                 }
             });
 
         if search_text != viewer.search() {
-            vim.search_edited();
+            search_history.reset_navigation();
             viewer.apply(ViewerCommand::SetSearch(search_text));
+            if focus_first_search_match(viewer) {
+                reveal_keyboard_focus = true;
+                force_vertical_scroll = true;
+            }
         }
         let new_order: Vec<_> = displayed_items.iter().map(DisplayedItem::id).collect();
         if new_order != original_order {
@@ -875,12 +938,7 @@ impl eframe::App for TemplateApp {
             let filtered = viewer
                 .displayed_items()
                 .iter()
-                .filter_map(|item| {
-                    let signal = item
-                        .signal_id()
-                        .and_then(|id| viewer.waveform().signal(id))?;
-                    signal.name().contains(viewer.search()).then_some(signal)
-                })
+                .filter_map(|item| item.signal_id().and_then(|id| viewer.waveform().signal(id)))
                 .collect::<Vec<_>>();
 
             let num_rows = filtered.len();
@@ -889,11 +947,6 @@ impl eframe::App for TemplateApp {
                     viewer
                         .displayed_items()
                         .iter()
-                        .filter(|item| {
-                            item.signal_id()
-                                .and_then(|id| viewer.waveform().signal(id))
-                                .is_some_and(|signal| signal.name().contains(viewer.search()))
-                        })
                         .position(|item| item.id() == focused)
                 });
                 if let Some(index) = focused_index {
@@ -1140,6 +1193,57 @@ fn mk_waveform(sigs: Vec<(vcd::ScopedVar, vcd::Signal)>, end_time: u64) -> Wavef
         })
         .collect();
     Waveform::new(signals, end_time)
+}
+
+fn highlighted_signal_name(
+    ui: &egui::Ui,
+    name: &str,
+    matcher: Option<&SearchMatcher>,
+) -> egui::WidgetText {
+    let Some(matcher) = matcher else {
+        return egui::WidgetText::from(name.to_owned());
+    };
+    let ranges = matcher.ranges(name).collect::<Vec<_>>();
+    if ranges.is_empty() {
+        return egui::WidgetText::from(name.to_owned());
+    }
+
+    let normal = egui::TextFormat {
+        font_id: egui::TextStyle::Button.resolve(ui.style()),
+        color: ui.visuals().text_color(),
+        ..Default::default()
+    };
+    let matched = egui::TextFormat {
+        background: egui::Color32::DARK_GREEN,
+        ..normal.clone()
+    };
+    let mut job = egui::text::LayoutJob::default();
+    let mut end = 0;
+    for range in ranges {
+        job.append(&name[end..range.start], 0.0, normal.clone());
+        job.append(&name[range.clone()], 0.0, matched.clone());
+        end = range.end;
+    }
+    job.append(&name[end..], 0.0, normal);
+    job.into()
+}
+
+fn focus_first_search_match(viewer: &mut ViewerState) -> bool {
+    let Some(matcher) = SearchMatcher::new(viewer.search()) else {
+        return false;
+    };
+    let first = viewer.displayed_items().iter().find_map(|item| {
+        let signal = item
+            .signal_id()
+            .and_then(|id| viewer.waveform().signal(id))?;
+        matcher.is_match(signal.name()).then_some(item.id())
+    });
+    if let Some(id) = first {
+        viewer.apply(ViewerCommand::SetFocusedItem(id));
+        true
+    } else {
+        false
+    }
 }
 
 fn take_vim_inputs(ctx: &egui::Context, keyboard_captured: bool) -> Vec<VimInput> {

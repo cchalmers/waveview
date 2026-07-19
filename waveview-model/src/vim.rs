@@ -1,4 +1,5 @@
-use crate::viewer::{ViewerCommand, ViewerState};
+use crate::search::SearchMatcher;
+use crate::viewer::{FocusPlacement, ViewerCommand, ViewerState};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VimInput {
@@ -32,9 +33,7 @@ pub struct VimState {
     count: Option<usize>,
     pending: String,
     last_change: Option<RepeatableChange>,
-    search_history: Vec<String>,
-    search_history_cursor: Option<usize>,
-    search_draft: String,
+    repeating_zoom: Option<bool>,
 }
 
 impl Default for VimState {
@@ -44,9 +43,7 @@ impl Default for VimState {
             count: None,
             pending: String::new(),
             last_change: None,
-            search_history: Vec::new(),
-            search_history_cursor: None,
-            search_draft: String::new(),
+            repeating_zoom: None,
         }
     }
 }
@@ -66,49 +63,7 @@ impl VimState {
     pub fn cancel(&mut self) {
         self.count = None;
         self.pending.clear();
-    }
-
-    pub fn accept_search(&mut self, query: &str) {
-        if !query.is_empty() && self.search_history.last().is_none_or(|last| last != query) {
-            self.search_history.push(query.to_owned());
-        }
-        self.reset_search_history_navigation();
-    }
-
-    pub fn search_history_previous(&mut self, current: &str) -> Option<String> {
-        if self.search_history.is_empty() {
-            return None;
-        }
-        let index = match self.search_history_cursor {
-            Some(index) => index.saturating_sub(1),
-            None => {
-                self.search_draft = current.to_owned();
-                self.search_history.len() - 1
-            }
-        };
-        self.search_history_cursor = Some(index);
-        Some(self.search_history[index].clone())
-    }
-
-    pub fn search_history_next(&mut self) -> Option<String> {
-        let index = self.search_history_cursor?;
-        if index + 1 < self.search_history.len() {
-            let next = index + 1;
-            self.search_history_cursor = Some(next);
-            Some(self.search_history[next].clone())
-        } else {
-            self.search_history_cursor = None;
-            Some(self.search_draft.clone())
-        }
-    }
-
-    pub fn search_edited(&mut self) {
-        self.reset_search_history_navigation();
-    }
-
-    fn reset_search_history_navigation(&mut self) {
-        self.search_history_cursor = None;
-        self.search_draft.clear();
+        self.repeating_zoom = None;
     }
 
     /// Interpret one key without depending on egui. `keyboard_captured` is supplied by the UI
@@ -135,6 +90,13 @@ impl VimState {
     }
 
     fn handle_char(&mut self, character: char, viewer: &ViewerState) -> Vec<ViewerCommand> {
+        if let Some(zoom_in) = self.repeating_zoom.take() {
+            let repeated_key = if zoom_in { 'i' } else { 'o' };
+            if character == repeated_key {
+                self.repeating_zoom = Some(zoom_in);
+                return self.zoom(viewer, zoom_in);
+            }
+        }
         if character.is_ascii_digit() && (character != '0' || self.count.is_some()) {
             let digit = character.to_digit(10).unwrap() as usize;
             self.count = Some(
@@ -164,13 +126,28 @@ impl VimState {
                 self.focus_relative(viewer, -count)
             }
             'G' => self.focus_absolute(viewer, false),
+            'H' => self.select_visible_row(FocusPlacement::Top),
+            'M' => self.select_visible_row(FocusPlacement::Center),
+            'L' => self.select_visible_row(FocusPlacement::Bottom),
             'h' => self.cursor_step(viewer, false),
             'l' => self.cursor_step(viewer, true),
             'b' => self.transition(viewer, false),
             'w' => self.transition(viewer, true),
+            'n' => {
+                let count = self.take_count() as isize;
+                self.focus_relative_wrapped(viewer, count)
+            }
+            'N' => {
+                let count = self.take_count() as isize;
+                self.focus_relative_wrapped(viewer, -count)
+            }
+            '*' => self.search_focused_name(viewer),
+            'y' => {
+                self.cancel();
+                vec![ViewerCommand::CopyFocusedName]
+            }
             '/' => {
                 self.cancel();
-                self.reset_search_history_navigation();
                 vec![ViewerCommand::BeginSearch]
             }
             '0' => {
@@ -218,6 +195,7 @@ impl VimState {
     }
 
     fn handle_ctrl(&mut self, character: char, viewer: &ViewerState) -> Vec<ViewerCommand> {
+        self.repeating_zoom = None;
         let count = self.take_count();
         let span = viewer.viewport().span();
         match character.to_ascii_lowercase() {
@@ -237,12 +215,23 @@ impl VimState {
         match (pending.as_str(), character) {
             ("g", 'g') => self.focus_absolute(viewer, true),
             ("d", 'd') => self.repeatable(viewer, RepeatableChange::RemoveFocused),
-            ("z", 'i') => self.zoom(viewer, true),
-            ("z", 'o') => self.zoom(viewer, false),
+            ("z", 'i') => {
+                let commands = self.zoom(viewer, true);
+                self.repeating_zoom = Some(true);
+                commands
+            }
+            ("z", 'o') => {
+                let commands = self.zoom(viewer, false);
+                self.repeating_zoom = Some(false);
+                commands
+            }
             ("z", 'f') => {
                 self.count = None;
                 vec![ViewerCommand::FitTime]
             }
+            ("z", 't') => self.reveal_focused(FocusPlacement::Top),
+            ("z", 'z') => self.reveal_focused(FocusPlacement::Center),
+            ("z", 'b') => self.reveal_focused(FocusPlacement::Bottom),
             _ => {
                 self.count = None;
                 Vec::new()
@@ -255,7 +244,7 @@ impl VimState {
     }
 
     fn focus_relative(&mut self, viewer: &ViewerState, delta: isize) -> Vec<ViewerCommand> {
-        let items = visible_items(viewer);
+        let items = navigable_items(viewer);
         if items.is_empty() {
             return Vec::new();
         }
@@ -272,7 +261,7 @@ impl VimState {
 
     fn focus_absolute(&mut self, viewer: &ViewerState, first: bool) -> Vec<ViewerCommand> {
         self.count = None;
-        let items = visible_items(viewer);
+        let items = navigable_items(viewer);
         let item = if first {
             items.first().copied()
         } else {
@@ -281,6 +270,22 @@ impl VimState {
         item.map_or_else(Vec::new, |item| {
             vec![ViewerCommand::SetFocusedItem(item.id())]
         })
+    }
+
+    fn focus_relative_wrapped(&mut self, viewer: &ViewerState, delta: isize) -> Vec<ViewerCommand> {
+        let items = search_matches(viewer);
+        if items.is_empty() {
+            return Vec::new();
+        }
+        let current = viewer
+            .cursor_state()
+            .focused_item()
+            .and_then(|id| items.iter().position(|item| item.id() == id));
+        let target = current.map_or_else(
+            || if delta < 0 { items.len() - 1 } else { 0 },
+            |current| (current as isize + delta).rem_euclid(items.len() as isize) as usize,
+        );
+        vec![ViewerCommand::SetFocusedItem(items[target].id())]
     }
 
     fn transition(&mut self, viewer: &ViewerState, forward: bool) -> Vec<ViewerCommand> {
@@ -356,6 +361,35 @@ impl VimState {
         vec![ViewerCommand::ZoomTime { anchor, factor }]
     }
 
+    fn reveal_focused(&mut self, placement: FocusPlacement) -> Vec<ViewerCommand> {
+        self.count = None;
+        vec![ViewerCommand::RevealFocusedItem(placement)]
+    }
+
+    fn select_visible_row(&mut self, placement: FocusPlacement) -> Vec<ViewerCommand> {
+        let count = self.take_count();
+        vec![ViewerCommand::SelectVisibleRow { placement, count }]
+    }
+
+    fn search_focused_name(&mut self, viewer: &ViewerState) -> Vec<ViewerCommand> {
+        self.cancel();
+        viewer
+            .cursor_state()
+            .focused_item()
+            .and_then(|focused| {
+                viewer
+                    .displayed_items()
+                    .iter()
+                    .find(|item| item.id() == focused)
+            })
+            .and_then(|item| item.signal_id())
+            .and_then(|id| viewer.waveform().signal(id))
+            .map_or_else(Vec::new, |signal| {
+                let leaf_name = signal.name().rsplit('.').next().unwrap_or(signal.name());
+                vec![ViewerCommand::SetSearch(leaf_name.to_owned())]
+            })
+    }
+
     fn repeatable(&mut self, viewer: &ViewerState, change: RepeatableChange) -> Vec<ViewerCommand> {
         self.last_change = Some(change);
         self.commands_for_change(viewer, change)
@@ -378,14 +412,21 @@ impl VimState {
     }
 }
 
-fn visible_items(viewer: &ViewerState) -> Vec<&crate::viewer::DisplayedItem> {
+fn navigable_items(viewer: &ViewerState) -> Vec<&crate::viewer::DisplayedItem> {
+    viewer.displayed_items().iter().collect()
+}
+
+fn search_matches(viewer: &ViewerState) -> Vec<&crate::viewer::DisplayedItem> {
+    let Some(matcher) = SearchMatcher::new(viewer.search()) else {
+        return Vec::new();
+    };
     viewer
         .displayed_items()
         .iter()
         .filter(|item| {
             item.signal_id()
                 .and_then(|id| viewer.waveform().signal(id))
-                .is_some_and(|signal| signal.name().contains(viewer.search()))
+                .is_some_and(|signal| matcher.is_match(signal.name()))
         })
         .collect()
 }
@@ -398,11 +439,15 @@ pub struct Binding {
 pub const NORMAL_BINDINGS: &[Binding] = &[
     Binding {
         keys: "[count] j / k",
-        description: "focus next / previous signal",
+        description: "select next / previous signal",
     },
     Binding {
         keys: "gg / G",
-        description: "focus first / last signal",
+        description: "select first / last signal",
+    },
+    Binding {
+        keys: "[count] H / M / L",
+        description: "select top / middle / bottom visible signal",
     },
     Binding {
         keys: "[count] h / l",
@@ -433,6 +478,14 @@ pub const NORMAL_BINDINGS: &[Binding] = &[
         description: "focus signal search",
     },
     Binding {
+        keys: "n / N / *",
+        description: "select next / previous search match / search selected name",
+    },
+    Binding {
+        keys: "y",
+        description: "copy selected signal name",
+    },
+    Binding {
         keys: "search: Enter",
         description: "accept search and return to Normal mode",
     },
@@ -445,12 +498,16 @@ pub const NORMAL_BINDINGS: &[Binding] = &[
         description: "zoom in / out / fit",
     },
     Binding {
+        keys: "zt / zz / zb",
+        description: "place selected signal at top / center / bottom",
+    },
+    Binding {
         keys: "dd",
-        description: "remove focused signal",
+        description: "remove selected signal",
     },
     Binding {
         keys: "[count] J / K",
-        description: "move focused signal down / up",
+        description: "move selected signal down / up",
     },
     Binding {
         keys: "u / Ctrl-R",
@@ -609,7 +666,7 @@ mod tests {
     }
 
     #[test]
-    fn row_motions_only_visit_items_visible_through_search() {
+    fn row_motions_ignore_search_highlighting() {
         let mut viewer = viewer();
         viewer.apply(ViewerCommand::SetSearch("s3".to_owned()));
         let mut vim = VimState::default();
@@ -617,7 +674,7 @@ mod tests {
         assert_eq!(
             vim.handle(VimInput::Char('j'), false, &viewer),
             vec![ViewerCommand::SetFocusedItem(
-                viewer.displayed_items()[3].id()
+                viewer.displayed_items()[1].id()
             )]
         );
         assert_eq!(
@@ -627,40 +684,101 @@ mod tests {
                 &[VimInput::Char('g'), VimInput::Char('g')]
             ),
             vec![ViewerCommand::SetFocusedItem(
-                viewer.displayed_items()[3].id()
+                viewer.displayed_items()[0].id()
             )]
         );
     }
 
     #[test]
-    fn search_history_moves_backward_forward_and_restores_the_draft() {
+    fn normal_search_copy_and_row_placement_use_commands() {
+        let mut viewer = viewer();
+        viewer.apply(ViewerCommand::SetSearch(r"s[0-4]".to_owned()));
         let mut vim = VimState::default();
-        vim.accept_search("clock");
-        vim.accept_search("reset");
-
-        assert_eq!(vim.search_history_previous("dra"), Some("reset".to_owned()));
         assert_eq!(
-            vim.search_history_previous("reset"),
-            Some("clock".to_owned())
+            vim.handle(VimInput::Char('N'), false, &viewer),
+            vec![ViewerCommand::SetFocusedItem(
+                viewer.displayed_items()[4].id()
+            )]
         );
         assert_eq!(
-            vim.search_history_previous("clock"),
-            Some("clock".to_owned())
+            vim.handle(VimInput::Char('*'), false, &viewer),
+            vec![ViewerCommand::SetSearch("s0".to_owned())]
         );
-        assert_eq!(vim.search_history_next(), Some("reset".to_owned()));
-        assert_eq!(vim.search_history_next(), Some("dra".to_owned()));
-        assert_eq!(vim.search_history_next(), None);
+        assert_eq!(
+            vim.handle(VimInput::Char('y'), false, &viewer),
+            vec![ViewerCommand::CopyFocusedName]
+        );
+        assert_eq!(
+            keys(
+                &mut vim,
+                &viewer,
+                &[VimInput::Char('z'), VimInput::Char('z')]
+            ),
+            vec![ViewerCommand::RevealFocusedItem(FocusPlacement::Center)]
+        );
+        assert_eq!(
+            keys(
+                &mut vim,
+                &viewer,
+                &[VimInput::Char('2'), VimInput::Char('H')]
+            ),
+            vec![ViewerCommand::SelectVisibleRow {
+                placement: FocusPlacement::Top,
+                count: 2,
+            }]
+        );
     }
 
     #[test]
-    fn search_history_ignores_empty_and_consecutive_duplicate_queries() {
+    fn repeated_i_and_o_continue_a_zoom_command() {
+        let viewer = viewer();
         let mut vim = VimState::default();
-        vim.accept_search("");
-        vim.accept_search("clock");
-        vim.accept_search("clock");
-
-        assert_eq!(vim.search_history_previous(""), Some("clock".to_owned()));
-        vim.search_edited();
-        assert_eq!(vim.search_history_next(), None);
+        assert_eq!(
+            keys(
+                &mut vim,
+                &viewer,
+                &[
+                    VimInput::Char('z'),
+                    VimInput::Char('i'),
+                    VimInput::Char('i'),
+                    VimInput::Char('i'),
+                ]
+            ),
+            vec![
+                ViewerCommand::ZoomTime {
+                    anchor: 50.0,
+                    factor: 2.0,
+                },
+                ViewerCommand::ZoomTime {
+                    anchor: 50.0,
+                    factor: 2.0,
+                },
+                ViewerCommand::ZoomTime {
+                    anchor: 50.0,
+                    factor: 2.0,
+                },
+            ]
+        );
+        assert_eq!(
+            keys(
+                &mut vim,
+                &viewer,
+                &[
+                    VimInput::Char('z'),
+                    VimInput::Char('o'),
+                    VimInput::Char('o'),
+                ]
+            ),
+            vec![
+                ViewerCommand::ZoomTime {
+                    anchor: 50.0,
+                    factor: 0.5,
+                },
+                ViewerCommand::ZoomTime {
+                    anchor: 50.0,
+                    factor: 0.5,
+                },
+            ]
+        );
     }
 }

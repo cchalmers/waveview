@@ -38,9 +38,11 @@ focus to Normal mode.
 - `Ctrl-F`, `Ctrl-B`: move one time viewport forward/backward.
 - `Ctrl-D`, `Ctrl-U`: scroll the signal list down/up by half a page.
 - `Ctrl-E`, `Ctrl-Y`: scroll the signal list down/up by one row.
+- `H`, `M`, `L`: select the top, middle, or bottom visible row; counts offset from the top/bottom.
 - `zt`, `zz`, `zb`: reveal focused item at top/center/bottom.
-- `zi`, `zo`, `zf`: zoom in/out/fit.
-- `/`, `?`, `n`, `N`, `*`: search forward/backward, repeat, and search focused name.
+- `zi`, `zo`, `zf`: zoom in/out/fit; repeated `i` or `o` continues zooming.
+- `/`, `?`, `n`, `N`, `*`: highlight search matches, move between them, and search the selected
+  signal's leaf name without filtering the displayed rows.
 - `dd`: remove focused displayed item.
 - `J`, `K`: move focused item down/up.
 - `u`, `Ctrl-R`: undo/redo display changes.
@@ -80,4 +82,4 @@ features do not require mouse/menu parity before shipping.
   `ViewerCommand`s.
 - Row focus, transition movement, capture bounds, viewport paging, zoom/fit, remove/reorder,
   undo/redo, and repeat are wired to the application.
-- Visual modes, search commands, vertical placement commands, yank, and jump history remain.
+- Visual modes, backward-search entry, richer context-sensitive yank, and jump history remain.
