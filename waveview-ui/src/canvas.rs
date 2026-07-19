@@ -1,5 +1,6 @@
 use eframe::egui;
 use waveview_model::viewer::{ViewerCommand, ViewerState};
+use waveview_model::DisplayedItemId;
 
 pub fn render(
     ui: &mut egui::Ui,
@@ -9,7 +10,7 @@ pub fn render(
     visible_rows: std::ops::Range<usize>,
     row_height: f32,
     commands: &mut Vec<ViewerCommand>,
-) {
+) -> (egui::Response, Option<DisplayedItemId>) {
     let time_viewport = viewer.viewport();
     let view_start = time_viewport.start() as f32;
     let view_end = time_viewport.end() as f32;
@@ -20,7 +21,7 @@ pub fn render(
         .filter_map(|item| {
             item.signal_id()
                 .and_then(|id| viewer.waveform().signal(id))
-                .map(|signal| (signal, item.value_format()))
+                .map(|signal| (signal, item))
         })
         .collect::<Vec<_>>();
 
@@ -41,16 +42,17 @@ pub fn render(
         hover_pos.map(|position| (position.x - canvas_rect.left()) / canvas_rect.width().max(1.0));
 
     ui.vertical(|ui| {
-        for (signal, value_format) in signals
+        for (signal, item) in signals
             .iter()
             .take(visible_rows.end)
             .skip(visible_rows.start)
         {
             let mut wave = crate::wave::Wave::new(
-                signal.name(),
+                item.alias().unwrap_or_else(|| signal.name()),
                 view_start..=view_end,
                 signal.signal(),
-                *value_format,
+                item.value_format(),
+                item.color(),
             );
             wave.height = row_height;
             wave.ui(ui);
@@ -137,4 +139,20 @@ pub fn render(
     if response.drag_stopped() {
         commands.push(ViewerCommand::EndMeasurement);
     }
+
+    let context_target = response
+        .secondary_clicked()
+        .then(|| {
+            let position = response.interact_pointer_pos()?;
+            let local_row = ((position.y - canvas_rect.top())
+                / (row_height + ui.spacing().item_spacing.y))
+                .floor()
+                .max(0.0) as usize;
+            signals
+                .get(visible_rows.start + local_row)
+                .map(|(_, item)| item.id())
+        })
+        .flatten();
+
+    (response, context_target)
 }

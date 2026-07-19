@@ -1,32 +1,49 @@
 use eframe::egui;
 use waveview_model::search::SearchMatcher;
+use waveview_model::ui_types::{SignalMenuAction, SignalPresentation};
 use waveview_model::vcd::Value;
-use waveview_model::viewer::ValueFormat;
+use waveview_model::viewer::{DisplayColor, ValueFormat};
 
 pub fn render_signal_button(
     ui: &mut egui::Ui,
     name: &str,
     value: Option<&[Value]>,
-    value_format: ValueFormat,
+    presentation: SignalPresentation,
     height: f32,
     selected: bool,
     matcher: Option<&SearchMatcher>,
 ) -> egui::Response {
-    let text = highlighted_signal_name(ui, name, matcher);
+    let text_color = crate::display_color::resolve(presentation.color, ui.visuals().text_color());
+    let text = highlighted_signal_name(ui, name, matcher, text_color);
     let mut button = egui::Button::selectable(selected, text)
         .min_size(egui::vec2(ui.available_width(), height))
         .truncate();
     if let Some(value) = value {
-        let text = egui::RichText::new(crate::value::format(value, value_format)).monospace();
+        let text = egui::RichText::new(crate::value::format(value, presentation.value_format))
+            .monospace()
+            .color(text_color);
         button = button.right_text(if selected { text.strong() } else { text });
     }
     ui.add_sized(egui::vec2(ui.available_width(), height), button)
 }
 
-pub fn render_signal_format_menu(ui: &mut egui::Ui, current: ValueFormat) -> Option<ValueFormat> {
+pub fn render_signal_context_menu(
+    ui: &mut egui::Ui,
+    has_alias: bool,
+    current_format: ValueFormat,
+    current_color: DisplayColor,
+) -> Option<SignalMenuAction> {
     let mut selected = None;
-    ui.label("Value format");
+    if ui.button("Set alias…").clicked() {
+        selected = Some(SignalMenuAction::EditAlias);
+        ui.close();
+    }
+    if has_alias && ui.button("Clear alias").clicked() {
+        selected = Some(SignalMenuAction::ClearAlias);
+        ui.close();
+    }
     ui.separator();
+    ui.label("Value format");
     for (format, label) in [
         (ValueFormat::Binary, "Binary"),
         (ValueFormat::Hexadecimal, "Hexadecimal"),
@@ -34,11 +51,39 @@ pub fn render_signal_format_menu(ui: &mut egui::Ui, current: ValueFormat) -> Opt
         (ValueFormat::Signed, "Signed decimal"),
         (ValueFormat::Ascii, "ASCII"),
     ] {
-        if ui.selectable_label(current == format, label).clicked() {
-            selected = Some(format);
+        if ui
+            .selectable_label(current_format == format, label)
+            .clicked()
+        {
+            selected = Some(SignalMenuAction::SetFormat(format));
             ui.close();
         }
     }
+    ui.separator();
+    ui.label("Color");
+    ui.horizontal(|ui| {
+        for color in DisplayColor::ALL {
+            let fallback = ui.visuals().text_color();
+            let swatch = crate::display_color::resolve(color, fallback);
+            let stroke = if current_color == color {
+                egui::Stroke::new(2.0, ui.visuals().selection.stroke.color)
+            } else {
+                egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color)
+            };
+            let response = ui
+                .add(
+                    egui::Button::new("")
+                        .min_size(egui::vec2(18.0, 18.0))
+                        .fill(swatch)
+                        .stroke(stroke),
+                )
+                .on_hover_text(color.name());
+            if response.clicked() {
+                selected = Some(SignalMenuAction::SetColor(color));
+                ui.close();
+            }
+        }
+    });
     selected
 }
 
@@ -46,18 +91,19 @@ fn highlighted_signal_name(
     ui: &egui::Ui,
     name: &str,
     matcher: Option<&SearchMatcher>,
+    color: egui::Color32,
 ) -> egui::WidgetText {
     let Some(matcher) = matcher else {
-        return egui::WidgetText::from(name.to_owned());
+        return egui::RichText::new(name.to_owned()).color(color).into();
     };
     let ranges = matcher.ranges(name).collect::<Vec<_>>();
     if ranges.is_empty() {
-        return egui::WidgetText::from(name.to_owned());
+        return egui::RichText::new(name.to_owned()).color(color).into();
     }
 
     let normal = egui::TextFormat {
         font_id: egui::TextStyle::Button.resolve(ui.style()),
-        color: ui.visuals().text_color(),
+        color,
         ..Default::default()
     };
     let matched = egui::TextFormat {

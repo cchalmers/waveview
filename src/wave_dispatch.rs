@@ -1,7 +1,7 @@
 use eframe::egui;
 use std::collections::HashSet;
 use waveview_model::search::SearchMatcher;
-use waveview_model::ui_types::{MenuAction, PromptOutput};
+use waveview_model::ui_types::{MenuAction, PromptOutput, SignalMenuAction, SignalPresentation};
 use waveview_model::viewer::ViewerCommand;
 use waveview_model::viewer::ViewerState;
 use waveview_model::waveform::Waveform;
@@ -52,27 +52,29 @@ pub fn render_signal_button(
     ui: &mut egui::Ui,
     name: &str,
     value: Option<&[waveview_model::vcd::Value]>,
-    value_format: waveview_model::viewer::ValueFormat,
+    presentation: SignalPresentation,
     height: f32,
     selected: bool,
     matcher: Option<&SearchMatcher>,
 ) -> egui::Response {
     #[cfg(all(feature = "reload", not(target_arch = "wasm32")))]
-    return hot_ui::render_signal_button(ui, name, value, value_format, height, selected, matcher);
+    return hot_ui::render_signal_button(ui, name, value, presentation, height, selected, matcher);
 
     #[cfg(not(all(feature = "reload", not(target_arch = "wasm32"))))]
-    waveview_ui::render_signal_button(ui, name, value, value_format, height, selected, matcher)
+    waveview_ui::render_signal_button(ui, name, value, presentation, height, selected, matcher)
 }
 
-pub fn render_signal_format_menu(
+pub fn render_signal_context_menu(
     ui: &mut egui::Ui,
-    current: waveview_model::viewer::ValueFormat,
-) -> Option<waveview_model::viewer::ValueFormat> {
+    has_alias: bool,
+    current_format: waveview_model::viewer::ValueFormat,
+    current_color: waveview_model::viewer::DisplayColor,
+) -> Option<SignalMenuAction> {
     #[cfg(all(feature = "reload", not(target_arch = "wasm32")))]
-    return hot_ui::render_signal_format_menu(ui, current);
+    return hot_ui::render_signal_context_menu(ui, has_alias, current_format, current_color);
 
     #[cfg(not(all(feature = "reload", not(target_arch = "wasm32"))))]
-    waveview_ui::render_signal_format_menu(ui, current)
+    waveview_ui::render_signal_context_menu(ui, has_alias, current_format, current_color)
 }
 
 pub fn render_signal_activity_button(ui: &mut egui::Ui, selected: bool) -> bool {
@@ -283,9 +285,9 @@ pub fn render_wave_canvas(
     visible_rows: std::ops::Range<usize>,
     row_height: f32,
     commands: &mut Vec<ViewerCommand>,
-) {
+) -> (egui::Response, Option<waveview_model::DisplayedItemId>) {
     #[cfg(all(feature = "reload", not(target_arch = "wasm32")))]
-    hot_ui::render_wave_canvas(
+    return hot_ui::render_wave_canvas(
         ui,
         viewer,
         canvas_rect,
@@ -304,7 +306,7 @@ pub fn render_wave_canvas(
         visible_rows,
         row_height,
         commands,
-    );
+    )
 }
 
 pub fn install_reload_repaint(ctx: &egui::Context) {

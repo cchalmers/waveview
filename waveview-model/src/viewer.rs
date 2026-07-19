@@ -133,12 +133,63 @@ impl ValueFormat {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DisplayColor {
+    #[default]
+    Default,
+    Red,
+    Orange,
+    Yellow,
+    Green,
+    Cyan,
+    Blue,
+    Purple,
+    Gray,
+}
+
+impl DisplayColor {
+    pub const ALL: [Self; 9] = [
+        Self::Default,
+        Self::Red,
+        Self::Orange,
+        Self::Yellow,
+        Self::Green,
+        Self::Cyan,
+        Self::Blue,
+        Self::Purple,
+        Self::Gray,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::Red => "red",
+            Self::Orange => "orange",
+            Self::Yellow => "yellow",
+            Self::Green => "green",
+            Self::Cyan => "cyan",
+            Self::Blue => "blue",
+            Self::Purple => "purple",
+            Self::Gray => "gray",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|color| color.name() == name)
+    }
+}
+
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct DisplayedItem {
     id: DisplayedItemId,
     kind: DisplayedItemKind,
     #[serde(default)]
     value_format: ValueFormat,
+    #[serde(default)]
+    alias: Option<String>,
+    #[serde(default)]
+    color: DisplayColor,
 }
 
 impl DisplayedItem {
@@ -159,6 +210,14 @@ impl DisplayedItem {
 
     pub fn value_format(&self) -> ValueFormat {
         self.value_format
+    }
+
+    pub fn alias(&self) -> Option<&str> {
+        self.alias.as_deref()
+    }
+
+    pub fn color(&self) -> DisplayColor {
+        self.color
     }
 }
 
@@ -348,6 +407,8 @@ impl ViewerState {
                             id: DisplayedItemId::new(self.next_displayed_item_id),
                             kind: DisplayedItemKind::Signal(signal_id),
                             value_format: ValueFormat::default(),
+                            alias: None,
+                            color: DisplayColor::default(),
                         });
                         self.next_displayed_item_id += 1;
                     }
@@ -392,6 +453,22 @@ impl ViewerState {
             ViewerCommand::SetDisplayedValueFormat { id, format } => {
                 self.set_displayed_value_format(id, format);
             }
+            ViewerCommand::SetFocusedAlias(alias) => {
+                if let Some(focused) = self.cursor.focused_item {
+                    self.set_displayed_alias(focused, alias);
+                }
+            }
+            ViewerCommand::SetDisplayedAlias { id, alias } => {
+                self.set_displayed_alias(id, alias);
+            }
+            ViewerCommand::SetFocusedColor(color) => {
+                if let Some(focused) = self.cursor.focused_item {
+                    self.set_displayed_color(focused, color);
+                }
+            }
+            ViewerCommand::SetDisplayedColor { id, color } => {
+                self.set_displayed_color(id, color);
+            }
             ViewerCommand::UndoDisplayChange => {
                 if let Some(previous) = self.display_undo.pop() {
                     self.display_redo
@@ -430,9 +507,13 @@ impl ViewerState {
                     .cursor
                     .focused_item
                     .and_then(|focused| self.displayed_items.iter().find(|item| item.id == focused))
-                    .and_then(DisplayedItem::signal_id)
-                    .and_then(|id| self.waveform.signal(id))
-                    .map(|signal| signal.name().to_owned());
+                    .and_then(|item| {
+                        item.alias().map(str::to_owned).or_else(|| {
+                            item.signal_id()
+                                .and_then(|id| self.waveform.signal(id))
+                                .map(|signal| signal.name().to_owned())
+                        })
+                    });
                 return name.map_or_else(Vec::new, |name| vec![EffectRequest::CopyText(name)]);
             }
             ViewerCommand::RequestOpenFile => return vec![EffectRequest::OpenFile],
@@ -458,6 +539,26 @@ impl ViewerState {
         let mut items = self.displayed_items.clone();
         if let Some(item) = items.iter_mut().find(|item| item.id == id) {
             item.value_format = format;
+        }
+        self.commit_display_change(items);
+    }
+
+    fn set_displayed_alias(&mut self, id: DisplayedItemId, alias: Option<String>) {
+        let alias = alias.and_then(|alias| {
+            let alias = alias.trim().to_owned();
+            (!alias.is_empty()).then_some(alias)
+        });
+        let mut items = self.displayed_items.clone();
+        if let Some(item) = items.iter_mut().find(|item| item.id == id) {
+            item.alias = alias;
+        }
+        self.commit_display_change(items);
+    }
+
+    fn set_displayed_color(&mut self, id: DisplayedItemId, color: DisplayColor) {
+        let mut items = self.displayed_items.clone();
+        if let Some(item) = items.iter_mut().find(|item| item.id == id) {
+            item.color = color;
         }
         self.commit_display_change(items);
     }
@@ -534,6 +635,16 @@ pub enum ViewerCommand {
         id: DisplayedItemId,
         format: ValueFormat,
     },
+    SetFocusedAlias(Option<String>),
+    SetDisplayedAlias {
+        id: DisplayedItemId,
+        alias: Option<String>,
+    },
+    SetFocusedColor(DisplayColor),
+    SetDisplayedColor {
+        id: DisplayedItemId,
+        color: DisplayColor,
+    },
     UndoDisplayChange,
     RedoDisplayChange,
     ScrollDisplayedRows(isize),
@@ -598,6 +709,8 @@ fn displayed_items_for(waveform: &Waveform) -> Vec<DisplayedItem> {
             id: DisplayedItemId::new(index as u64),
             kind: DisplayedItemKind::Signal(signal.id()),
             value_format: ValueFormat::default(),
+            alias: None,
+            color: DisplayColor::default(),
         })
         .collect()
 }
@@ -747,6 +860,33 @@ mod tests {
             state.displayed_items()[0].value_format(),
             ValueFormat::Signed
         );
+    }
+
+    #[test]
+    fn focused_alias_and_color_are_durable_and_undoable() {
+        let mut state = state_with_signals(2);
+        let first = state.displayed_items()[0].id();
+
+        state.apply(ViewerCommand::SetFocusedAlias(Some(
+            "  instruction  ".to_owned(),
+        )));
+        assert_eq!(state.displayed_items()[0].alias(), Some("instruction"));
+        state.apply(ViewerCommand::SetDisplayedColor {
+            id: first,
+            color: DisplayColor::Cyan,
+        });
+        assert_eq!(state.displayed_items()[0].color(), DisplayColor::Cyan);
+
+        state.apply(ViewerCommand::UndoDisplayChange);
+        assert_eq!(state.displayed_items()[0].color(), DisplayColor::Default);
+        assert_eq!(state.displayed_items()[0].alias(), Some("instruction"));
+        state.apply(ViewerCommand::UndoDisplayChange);
+        assert_eq!(state.displayed_items()[0].alias(), None);
+
+        state.apply(ViewerCommand::RedoDisplayChange);
+        state.apply(ViewerCommand::RedoDisplayChange);
+        assert_eq!(state.displayed_items()[0].alias(), Some("instruction"));
+        assert_eq!(state.displayed_items()[0].color(), DisplayColor::Cyan);
     }
 
     #[test]

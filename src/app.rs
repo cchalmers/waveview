@@ -4,12 +4,13 @@ use eframe::egui;
 use eframe::egui::NumExt;
 use egui::*;
 use waveview_model::search::{SearchHistory, SearchMatcher};
-use waveview_model::ui_types::MenuAction;
+use waveview_model::ui_types::{MenuAction, SignalMenuAction, SignalPresentation};
 use waveview_model::viewer::{
     DisplayedItem, EffectRequest, FocusPlacement, ViewerCommand, ViewerState,
 };
 use waveview_model::vim::{VimInput, VimState};
 use waveview_model::waveform::Waveform;
+use waveview_model::DisplayedItemId;
 
 use std::collections::HashSet;
 use std::sync::atomic::AtomicBool;
@@ -51,6 +52,10 @@ pub struct TemplateApp {
     status_message: Option<String>,
     #[serde(skip)]
     status_expires_at: f64,
+    #[serde(skip)]
+    alias_editor: AliasEditor,
+    #[serde(skip)]
+    wave_context_target: Option<DisplayedItemId>,
     search_history: SearchHistory,
     command_history: SearchHistory,
     selected_activity: Option<Activity>,
@@ -96,6 +101,8 @@ impl Default for TemplateApp {
             prompt: crate::prompt::PromptRuntime::default(),
             status_message: None,
             status_expires_at: 0.0,
+            alias_editor: AliasEditor::default(),
+            wave_context_target: None,
             search_history: SearchHistory::default(),
             command_history: SearchHistory::default(),
             selected_activity: Some(Activity::Signals),
@@ -115,6 +122,71 @@ enum SidePanel {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 enum Activity {
     Signals,
+}
+
+#[derive(Default)]
+struct AliasEditor {
+    target: Option<DisplayedItemId>,
+    input: String,
+    request_focus: bool,
+}
+
+impl AliasEditor {
+    fn open(&mut self, target: DisplayedItemId, current: Option<&str>) {
+        self.target = Some(target);
+        self.input = current.unwrap_or_default().to_owned();
+        self.request_focus = true;
+    }
+
+    fn is_open(&self) -> bool {
+        self.target.is_some()
+    }
+
+    fn close(&mut self) {
+        self.target = None;
+        self.request_focus = false;
+    }
+
+    fn show(&mut self, ctx: &egui::Context) -> Option<(DisplayedItemId, Option<String>)> {
+        let target = self.target?;
+        let mut window_open = true;
+        let mut submit = false;
+        let mut cancel = false;
+        egui::Window::new("Signal alias")
+            .id(egui::Id::new("signal_alias_window"))
+            .open(&mut window_open)
+            .collapsible(false)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.label("Display name");
+                let response = ui.add(
+                    egui::TextEdit::singleline(&mut self.input)
+                        .id(signal_alias_id())
+                        .desired_width(320.0),
+                );
+                if self.request_focus {
+                    response.request_focus();
+                    self.request_focus = false;
+                }
+                submit |= response.has_focus() && ui.input(|input| input.key_pressed(Key::Enter));
+                ui.horizontal(|ui| {
+                    if ui.button("Cancel").clicked() {
+                        cancel = true;
+                    }
+                    if ui.button("Apply").clicked() {
+                        submit = true;
+                    }
+                });
+            });
+        if !window_open || cancel {
+            self.close();
+        } else if submit {
+            let alias = (!self.input.trim().is_empty()).then(|| self.input.trim().to_owned());
+            self.close();
+            return Some((target, alias));
+        }
+        None
+    }
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -208,6 +280,8 @@ impl TemplateApp {
             prompt: crate::prompt::PromptRuntime::default(),
             status_message: None,
             status_expires_at: 0.0,
+            alias_editor: AliasEditor::default(),
+            wave_context_target: None,
             search_history: SearchHistory::default(),
             command_history: SearchHistory::default(),
             selected_activity: Some(Activity::Signals),
@@ -345,6 +419,8 @@ impl eframe::App for TemplateApp {
             prompt,
             status_message,
             status_expires_at,
+            alias_editor,
+            wave_context_target,
             search_history,
             command_history,
             selected_activity,
@@ -438,6 +514,7 @@ impl eframe::App for TemplateApp {
             || url_window.open
             || err_window.open
             || live.open
+            || alias_editor.is_open()
             || *show_key_help;
         let search_inputs = take_search_inputs(&ctx, search_has_focus);
         let prompt_inputs = take_search_inputs(&ctx, prompt_has_focus);
@@ -504,6 +581,8 @@ impl eframe::App for TemplateApp {
             if input == VimInput::Escape {
                 if prompt.is_open() {
                     prompt.close();
+                } else if alias_editor.is_open() {
+                    alias_editor.close();
                 } else if *show_key_help {
                     *show_key_help = false;
                 } else if url_window.open {
@@ -677,6 +756,10 @@ impl eframe::App for TemplateApp {
                 wave_dispatch::render_key_help(ui);
             });
 
+        if let Some((id, alias)) = alias_editor.show(&ctx) {
+            viewer.apply(ViewerCommand::SetDisplayedAlias { id, alias });
+        }
+
         // if *show_info {
         //     egui::SidePanel::right("inspection_panel").show(ctx, |ui| {
         //         let scroll_area = egui::ScrollArea::both().auto_shrink([false; 2]);
@@ -780,7 +863,7 @@ impl eframe::App for TemplateApp {
             .collect();
         let mut displayed_items = viewer.displayed_items().to_vec();
         let mut requested_focus = None;
-        let mut requested_value_format = None;
+        let mut requested_signal_action = None;
         let timeline_height = wave_dispatch::timeline_height();
         let reload_status = wave_dispatch::reload_status();
 
@@ -1039,11 +1122,14 @@ impl eframe::App for TemplateApp {
                                             let signal_response =
                                                 wave_dispatch::render_signal_button(
                                                     ui,
-                                                    signal.name(),
+                                                    item.alias().unwrap_or_else(|| signal.name()),
                                                     viewer.cursor().and_then(|time| {
                                                         signal.signal().value_at(time)
                                                     }),
-                                                    item.value_format(),
+                                                    SignalPresentation {
+                                                        value_format: item.value_format(),
+                                                        color: item.color(),
+                                                    },
                                                     *row_height,
                                                     focused_item == Some(item.id()),
                                                     search_matcher.as_ref(),
@@ -1054,14 +1140,16 @@ impl eframe::App for TemplateApp {
                                                 requested_focus = Some(item.id());
                                             }
                                             signal_response.context_menu(|ui| {
-                                                if let Some(format) =
-                                                    wave_dispatch::render_signal_format_menu(
+                                                if let Some(action) =
+                                                    wave_dispatch::render_signal_context_menu(
                                                         ui,
+                                                        item.alias().is_some(),
                                                         item.value_format(),
+                                                        item.color(),
                                                     )
                                                 {
-                                                    requested_value_format =
-                                                        Some((item.id(), format));
+                                                    requested_signal_action =
+                                                        Some((item.id(), action));
                                                 }
                                             });
                                         }
@@ -1091,11 +1179,30 @@ impl eframe::App for TemplateApp {
         if let Some(id) = requested_focus {
             viewer.apply(ViewerCommand::SetFocusedItem(id));
         }
-        if let Some((id, format)) = requested_value_format {
-            viewer.apply(ViewerCommand::SetDisplayedValueFormat { id, format });
+        if let Some((id, action)) = requested_signal_action {
+            match action {
+                SignalMenuAction::EditAlias => {
+                    let alias = displayed_items
+                        .iter()
+                        .find(|item| item.id() == id)
+                        .and_then(DisplayedItem::alias);
+                    alias_editor.open(id, alias);
+                }
+                SignalMenuAction::ClearAlias => {
+                    viewer.apply(ViewerCommand::SetDisplayedAlias { id, alias: None });
+                }
+                SignalMenuAction::SetFormat(format) => {
+                    viewer.apply(ViewerCommand::SetDisplayedValueFormat { id, format });
+                }
+                SignalMenuAction::SetColor(color) => {
+                    viewer.apply(ViewerCommand::SetDisplayedColor { id, color });
+                }
+            }
         }
 
         let mut pending_commands = Vec::new();
+        let mut requested_wave_focus = None;
+        let mut requested_wave_action = None;
 
         egui::CentralPanel::default().show(root_ui, |ui| {
             let time_viewport = viewer.viewport();
@@ -1179,7 +1286,7 @@ impl eframe::App for TemplateApp {
                 info.pixels_per_tick = pixels_per_tick;
 
                 ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
-                    wave_dispatch::render_wave_canvas(
+                    let (wave_response, context_target) = wave_dispatch::render_wave_canvas(
                         ui,
                         viewer,
                         rect,
@@ -1188,9 +1295,55 @@ impl eframe::App for TemplateApp {
                         *row_height,
                         &mut pending_commands,
                     );
+                    if let Some(id) = context_target {
+                        *wave_context_target = Some(id);
+                        requested_wave_focus = Some(id);
+                    }
+                    let context_target = *wave_context_target;
+                    wave_response.context_menu(|ui| {
+                        let Some(item) = context_target.and_then(|id| {
+                            viewer.displayed_items().iter().find(|item| item.id() == id)
+                        }) else {
+                            ui.close();
+                            return;
+                        };
+                        if let Some(action) = wave_dispatch::render_signal_context_menu(
+                            ui,
+                            item.alias().is_some(),
+                            item.value_format(),
+                            item.color(),
+                        ) {
+                            requested_wave_action = Some((item.id(), action));
+                        }
+                    });
                 });
             });
         });
+
+        if let Some(id) = requested_wave_focus {
+            viewer.apply(ViewerCommand::SetFocusedItem(id));
+        }
+        if let Some((id, action)) = requested_wave_action {
+            match action {
+                SignalMenuAction::EditAlias => {
+                    let alias = viewer
+                        .displayed_items()
+                        .iter()
+                        .find(|item| item.id() == id)
+                        .and_then(DisplayedItem::alias);
+                    alias_editor.open(id, alias);
+                }
+                SignalMenuAction::ClearAlias => {
+                    viewer.apply(ViewerCommand::SetDisplayedAlias { id, alias: None });
+                }
+                SignalMenuAction::SetFormat(format) => {
+                    viewer.apply(ViewerCommand::SetDisplayedValueFormat { id, format });
+                }
+                SignalMenuAction::SetColor(color) => {
+                    viewer.apply(ViewerCommand::SetDisplayedColor { id, color });
+                }
+            }
+        }
 
         for command in pending_commands {
             viewer.apply(command);
@@ -1260,7 +1413,9 @@ fn focus_first_search_match(viewer: &mut ViewerState) -> bool {
         let signal = item
             .signal_id()
             .and_then(|id| viewer.waveform().signal(id))?;
-        matcher.is_match(signal.name()).then_some(item.id())
+        matcher
+            .is_match(item.alias().unwrap_or_else(|| signal.name()))
+            .then_some(item.id())
     });
     if let Some(id) = first {
         viewer.apply(ViewerCommand::SetFocusedItem(id));
@@ -1376,6 +1531,10 @@ fn vim_input_for_event(event: &egui::Event, modifiers: egui::Modifiers) -> Optio
 
 fn signal_search_id() -> egui::Id {
     egui::Id::new("signal_search")
+}
+
+fn signal_alias_id() -> egui::Id {
+    egui::Id::new("signal_alias")
 }
 
 fn signal_browser_search_id() -> egui::Id {

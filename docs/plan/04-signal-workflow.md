@@ -30,7 +30,8 @@ and a separate flat displayed-signal list.
 - [x] Display each focused/visible signal's value at the primary cursor.
 - [x] Implement binary, hexadecimal, unsigned, signed, and ASCII vector formats.
 - [x] Give unknown and high-impedance values distinct rendering and text.
-- [ ] Add per-item color, height, alias, and format state.
+- [x] Add per-item color, alias, and format state.
+- [ ] Add per-item height state after the displayed list supports variable-height rows.
 - [ ] Render scalar, vector, group, divider, and timeline rows through one displayed-item layout.
 
 ## Correctness and performance
@@ -69,3 +70,6 @@ and a separate flat displayed-signal list.
   width unsigned decimal, two's-complement signed decimal, and escaped ASCII formatting apply to
   both waveform labels and the cursor-value column; unknown digits fall back to lossless binary or
   hexadecimal text rather than pretending to be numeric.
+- Displayed aliases and a compact semantic color palette share the same durable undo/redo path.
+  Aliases replace the visible name for search, `*`, and copying without changing signal identity;
+  both settings are available from the row context menu and the Molt command bridge.

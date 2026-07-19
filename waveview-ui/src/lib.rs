@@ -2,6 +2,7 @@
 
 mod activity;
 mod canvas;
+mod display_color;
 mod displayed_items;
 mod menus;
 mod prompt_adapter;
@@ -37,19 +38,21 @@ pub fn render_signal_button(
     ui: &mut egui::Ui,
     name: &str,
     value: Option<&[waveview_model::vcd::Value]>,
-    value_format: waveview_model::viewer::ValueFormat,
+    presentation: waveview_model::ui_types::SignalPresentation,
     height: f32,
     selected: bool,
     matcher: Option<&SearchMatcher>,
 ) -> egui::Response {
-    displayed_items::render_signal_button(ui, name, value, value_format, height, selected, matcher)
+    displayed_items::render_signal_button(ui, name, value, presentation, height, selected, matcher)
 }
 
-pub fn render_signal_format_menu(
+pub fn render_signal_context_menu(
     ui: &mut egui::Ui,
-    current: waveview_model::viewer::ValueFormat,
-) -> Option<waveview_model::viewer::ValueFormat> {
-    displayed_items::render_signal_format_menu(ui, current)
+    has_alias: bool,
+    current_format: waveview_model::viewer::ValueFormat,
+    current_color: waveview_model::viewer::DisplayColor,
+) -> Option<waveview_model::ui_types::SignalMenuAction> {
+    displayed_items::render_signal_context_menu(ui, has_alias, current_format, current_color)
 }
 
 pub fn render_signal_activity_button(ui: &mut egui::Ui, selected: bool) -> bool {
@@ -150,7 +153,7 @@ pub fn render_wave_canvas(
     visible_rows: std::ops::Range<usize>,
     row_height: f32,
     commands: &mut Vec<ViewerCommand>,
-) {
+) -> (egui::Response, Option<waveview_model::DisplayedItemId>) {
     canvas::render(
         ui,
         viewer,
@@ -159,7 +162,7 @@ pub fn render_wave_canvas(
         visible_rows,
         row_height,
         commands,
-    );
+    )
 }
 
 /// Render the generic timeline and translate its backend-free actions into viewer commands.

@@ -2,7 +2,7 @@ use eframe::egui;
 use egui::*;
 use std::ops::{Range, RangeInclusive};
 use waveview_model::vcd;
-use waveview_model::viewer::ValueFormat;
+use waveview_model::viewer::{DisplayColor, ValueFormat};
 
 pub struct Wave<'a> {
     view_range: RangeInclusive<f32>,
@@ -10,6 +10,7 @@ pub struct Wave<'a> {
     name: &'a str,
     wave_data: &'a vcd::Signal,
     value_format: ValueFormat,
+    color: DisplayColor,
 }
 
 impl<'a> Wave<'a> {
@@ -18,6 +19,7 @@ impl<'a> Wave<'a> {
         view_range: RangeInclusive<f32>,
         wave_data: &'a vcd::Signal,
         value_format: ValueFormat,
+        color: DisplayColor,
     ) -> Self {
         Self {
             view_range,
@@ -25,6 +27,7 @@ impl<'a> Wave<'a> {
             wave_data,
             name,
             value_format,
+            color,
         }
     }
 
@@ -35,6 +38,7 @@ impl<'a> Wave<'a> {
             wave_data,
             name,
             value_format,
+            color,
         } = self;
         log::trace!("Wave::new({name})");
 
@@ -53,15 +57,23 @@ impl<'a> Wave<'a> {
         }
 
         let mut shapes = Vec::new();
+        let default_stroke = ui.visuals().widgets.active.bg_stroke;
+        let style = WaveStyle {
+            stroke: Stroke::new(
+                default_stroke.width,
+                crate::display_color::resolve(color, default_stroke.color),
+            ),
+            value_format,
+        };
         if wave_data.width() == 1 {
             render_scalar(
                 ui,
                 &mut shapes,
                 wave_data,
-                first_time,
-                last_time,
+                first_time..last_time,
                 rect,
                 &view_range,
+                style,
             );
         } else {
             render_vector(
@@ -71,26 +83,34 @@ impl<'a> Wave<'a> {
                 first_time..last_time,
                 rect,
                 &view_range,
-                value_format,
+                style,
             );
         }
         ui.painter().with_clip_rect(rect).extend(shapes);
     }
 }
 
+#[derive(Clone, Copy)]
+struct WaveStyle {
+    stroke: Stroke,
+    value_format: ValueFormat,
+}
+
 fn render_scalar(
     ui: &Ui,
     shapes: &mut Vec<Shape>,
     signal: &vcd::Signal,
-    first_time: u64,
-    last_time: u64,
+    time_range: Range<u64>,
     rect: Rect,
     view_range: &RangeInclusive<f32>,
+    style: WaveStyle,
 ) {
+    let first_time = time_range.start;
+    let last_time = time_range.end;
     let Some(&initial) = signal.value_at(first_time).and_then(|value| value.first()) else {
         return;
     };
-    let stroke = ui.visuals().widgets.active.bg_stroke;
+    let stroke = style.stroke;
     let mut previous = initial;
     let mut segment_start = (*view_range.start()).max(first_time as f32);
 
@@ -185,11 +205,11 @@ fn render_vector(
     time_range: Range<u64>,
     rect: Rect,
     view_range: &RangeInclusive<f32>,
-    value_format: ValueFormat,
+    style: WaveStyle,
 ) {
     let first_time = time_range.start;
     let last_time = time_range.end;
-    let stroke = ui.visuals().widgets.active.bg_stroke;
+    let stroke = style.stroke;
     for (time, _) in signal.range(first_time.saturating_add(1)..last_time) {
         if time <= first_time || time >= last_time {
             continue;
@@ -223,7 +243,7 @@ fn render_vector(
             previous,
             rect,
             view_range,
-            value_format,
+            style,
         );
         previous = value;
         segment_start = segment_end;
@@ -235,7 +255,7 @@ fn render_vector(
         previous,
         rect,
         view_range,
-        value_format,
+        style,
     );
 }
 
@@ -246,7 +266,7 @@ fn add_vector_segment(
     value: &[vcd::Value],
     rect: Rect,
     view_range: &RangeInclusive<f32>,
-    value_format: ValueFormat,
+    style: WaveStyle,
 ) {
     let start_pos = wave_pos(segment.start, 0.5, rect, view_range);
     let end_pos = wave_pos(segment.end, 0.5, rect, view_range);
@@ -277,15 +297,12 @@ fn add_vector_segment(
             ui.visuals().extreme_bg_color,
         );
     } else {
-        shapes.push(Shape::line_segment(
-            [start_pos, end_pos],
-            ui.visuals().widgets.active.bg_stroke,
-        ));
+        shapes.push(Shape::line_segment([start_pos, end_pos], style.stroke));
     }
 
-    let text = crate::value::format(value, value_format);
+    let text = crate::value::format(value, style.value_format);
     let font = epaint::text::FontId::new(12.0, text::FontFamily::Monospace);
-    let color = ui.visuals().text_color();
+    let color = style.stroke.color;
     let mut galley = ui.fonts_mut(|fonts| fonts.layout_no_wrap(text, font.clone(), color));
     let mut label_color = color;
     let mut horizontal_padding = 4.0;

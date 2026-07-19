@@ -354,12 +354,21 @@ impl VimState {
                     .iter()
                     .find(|item| item.id() == focused)
             })
-            .and_then(|item| item.signal_id())
-            .and_then(|id| viewer.waveform().signal(id))
-            .map_or_else(Vec::new, |signal| {
-                let leaf_name = signal.name().rsplit('.').next().unwrap_or(signal.name());
-                vec![ViewerCommand::SetSearch(leaf_name.to_owned())]
+            .and_then(|item| {
+                item.alias().map(str::to_owned).or_else(|| {
+                    item.signal_id()
+                        .and_then(|id| viewer.waveform().signal(id))
+                        .map(|signal| {
+                            signal
+                                .name()
+                                .rsplit('.')
+                                .next()
+                                .unwrap_or(signal.name())
+                                .to_owned()
+                        })
+                })
             })
+            .map_or_else(Vec::new, |name| vec![ViewerCommand::SetSearch(name)])
     }
 
     fn repeatable(&mut self, viewer: &ViewerState, change: RepeatableChange) -> Vec<ViewerCommand> {
@@ -412,7 +421,9 @@ fn search_matches(viewer: &ViewerState) -> Vec<&crate::viewer::DisplayedItem> {
         .filter(|item| {
             item.signal_id()
                 .and_then(|id| viewer.waveform().signal(id))
-                .is_some_and(|signal| matcher.is_match(signal.name()))
+                .is_some_and(|signal| {
+                    matcher.is_match(item.alias().unwrap_or_else(|| signal.name()))
+                })
         })
         .collect()
 }

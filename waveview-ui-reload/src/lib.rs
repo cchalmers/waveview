@@ -27,20 +27,22 @@ pub fn render_signal_button(
     ui: &mut egui::Ui,
     name: &str,
     value: Option<&[waveview_model::vcd::Value]>,
-    value_format: waveview_model::viewer::ValueFormat,
+    presentation: waveview_model::ui_types::SignalPresentation,
     height: f32,
     selected: bool,
     matcher: Option<&SearchMatcher>,
 ) -> egui::Response {
-    waveview_ui::render_signal_button(ui, name, value, value_format, height, selected, matcher)
+    waveview_ui::render_signal_button(ui, name, value, presentation, height, selected, matcher)
 }
 
 #[unsafe(no_mangle)]
-pub fn render_signal_format_menu(
+pub fn render_signal_context_menu(
     ui: &mut egui::Ui,
-    current: waveview_model::viewer::ValueFormat,
-) -> Option<waveview_model::viewer::ValueFormat> {
-    waveview_ui::render_signal_format_menu(ui, current)
+    has_alias: bool,
+    current_format: waveview_model::viewer::ValueFormat,
+    current_color: waveview_model::viewer::DisplayColor,
+) -> Option<waveview_model::ui_types::SignalMenuAction> {
+    waveview_ui::render_signal_context_menu(ui, has_alias, current_format, current_color)
 }
 
 #[unsafe(no_mangle)]
@@ -159,7 +161,7 @@ pub fn render_wave_canvas(
     visible_rows: std::ops::Range<usize>,
     row_height: f32,
     commands: &mut Vec<ViewerCommand>,
-) {
+) -> (egui::Response, Option<waveview_model::DisplayedItemId>) {
     waveview_ui::render_wave_canvas(
         ui,
         viewer,
@@ -168,7 +170,7 @@ pub fn render_wave_canvas(
         visible_rows,
         row_height,
         commands,
-    );
+    )
 }
 
 #[unsafe(no_mangle)]
