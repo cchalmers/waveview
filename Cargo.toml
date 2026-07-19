@@ -9,6 +9,7 @@ rust-version = "1.92"
 [workspace]
 members = [
     "eprompt",
+    "timeline",
     "waveserve",
     "waveview-model",
     "waveview-ui",
