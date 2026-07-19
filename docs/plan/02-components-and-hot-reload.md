@@ -88,6 +88,9 @@ move its dirty worktree or retain its websocket/backend coupling.
 - The waveform canvas now reloads as one component: visible row composition, hover line, persistent
   cursor, measurement drag/overlay, wheel zoom, and horizontal pan. The host retains only the
   vertical `ScrollArea`, virtualization range, and durable viewer state.
+- The single UI crate is now internally split into activity, signal-browser, displayed-item,
+  canvas/wave, timeline-adapter, and Vim/status modules. This gives each common UI iteration target
+  a small source boundary without paying for multiple dylibs or multiplying shared ABI surfaces.
 - The reload runner reports building/failure state inside the viewer and leaves the last valid dylib
   active after a compilation error. Host/shared/ABI edits produce a sticky restart-required status;
   Vim behavior and shared Vim state live in separate files so the watcher boundary is explicit.

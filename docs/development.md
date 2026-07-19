@@ -47,6 +47,20 @@ model/search/waveform types and behavior, Vim state fields, and exported dynamic
 need a restart. `vim_types.rs` is intentionally separate from `vim.rs` so that this distinction is
 unambiguous.
 
+The hot-side code is split by editing surface while still producing one dylib:
+
+| Component | Source |
+| --- | --- |
+| Activity-bar controls | `waveview-ui/src/activity.rs` |
+| Available-signal hierarchy | `waveview-ui/src/signal_browser.rs` |
+| Displayed signal rows/search highlighting | `waveview-ui/src/displayed_items.rs` |
+| Waveform rows and canvas interaction | `waveview-ui/src/canvas.rs`, `waveview-ui/src/wave.rs` |
+| Timeline-to-viewer action mapping | `waveview-ui/src/timeline_adapter.rs` |
+| Vim status and key help | `waveview-ui/src/vim_ui.rs` |
+
+`waveview-ui/src/lib.rs` is the narrow public facade used by both static and reload builds. Keep
+durable application state out of these component modules.
+
 The host deliberately owns stateful egui containers and virtualization offsets, then passes their
 inner `Ui` plus borrowed application state to reloadable render functions. This keeps egui state
 created by one dylib from surviving after that dylib is unloaded while allowing most visible
