@@ -5,7 +5,7 @@ use eframe::egui::NumExt;
 use egui::*;
 use waveview_model::search::{SearchHistory, SearchMatcher};
 use waveview_model::ui_types::{
-    MenuAction, SignalMenuAction, SignalPresentation, TimelinePresentation,
+    MarkPresentation, MenuAction, SignalMenuAction, SignalPresentation, TimelinePresentation,
 };
 use waveview_model::viewer::{
     DisplayedItem, EffectRequest, FocusPlacement, ViewerCommand, ViewerState,
@@ -694,6 +694,7 @@ impl eframe::App for TemplateApp {
                         *selected_activity == Some(Activity::Signals),
                         matches!(*side_panel, SidePanel::Info),
                         matches!(*side_panel, SidePanel::Samples),
+                        viewer.marks_visible(),
                         row_height,
                     );
                 });
@@ -748,6 +749,9 @@ impl eframe::App for TemplateApp {
             Some(MenuAction::ToggleSignalBrowser) => {
                 *selected_activity =
                     (*selected_activity != Some(Activity::Signals)).then_some(Activity::Signals);
+            }
+            Some(MenuAction::ToggleMarks) => {
+                viewer.apply(ViewerCommand::ToggleMarksVisible);
             }
             Some(MenuAction::FitTime) => {
                 viewer.apply(ViewerCommand::FitTime);
@@ -1213,11 +1217,18 @@ impl eframe::App for TemplateApp {
         let mut pending_commands = Vec::new();
         let mut requested_wave_focus = None;
         let mut requested_wave_action = None;
-        let mark_times = viewer
-            .marks()
-            .values()
-            .map(|position| position.time())
-            .collect::<Vec<_>>();
+        let mark_presentations = if viewer.marks_visible() {
+            viewer
+                .marks()
+                .iter()
+                .map(|(&name, position)| MarkPresentation {
+                    name,
+                    time: position.time(),
+                })
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
 
         egui::CentralPanel::default().show(root_ui, |ui| {
             let time_viewport = viewer.viewport();
@@ -1230,7 +1241,7 @@ impl eframe::App for TemplateApp {
                     cursor: viewer.cursor(),
                     measurement_start: viewer.cursor_state().measurement_start(),
                 },
-                &mark_times,
+                &mark_presentations,
                 &mut pending_commands,
             );
 

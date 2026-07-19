@@ -20,6 +20,12 @@ pub struct TimelinePresentation {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MarkPresentation {
+    pub name: char,
+    pub time: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MenuAction {
     OpenFile,
     OpenUrl,
@@ -30,6 +36,7 @@ pub enum MenuAction {
     RedoDisplayChange,
     RemoveFocusedItem,
     ToggleSignalBrowser,
+    ToggleMarks,
     FitTime,
     ShowInfo,
     ShowSamples,

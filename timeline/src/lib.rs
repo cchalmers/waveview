@@ -46,11 +46,17 @@ pub struct TimelineResponse {
     pub actions: Vec<Action>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Marker {
+    pub time: u64,
+    pub label: char,
+}
+
 pub struct Timeline<'a> {
     visible: TimeRange,
     cursor: Option<u64>,
     selection: Option<TimeRange>,
-    marks: &'a [u64],
+    marks: &'a [Marker],
     formatter: &'a dyn Fn(u64) -> String,
     height: f32,
 }
@@ -77,7 +83,7 @@ impl<'a> Timeline<'a> {
         self
     }
 
-    pub fn marks(mut self, marks: &'a [u64]) -> Self {
+    pub fn marks(mut self, marks: &'a [Marker]) -> Self {
         self.marks = marks;
         self
     }
@@ -105,11 +111,24 @@ impl<'a> Timeline<'a> {
                 Color32::LIGHT_BLUE.linear_multiply(0.12),
             );
         }
-        for &mark in self.marks {
-            paint_marker(ui, rect, self.visible, mark, Color32::LIGHT_GREEN, 1.0);
+        for mark in self.marks {
+            paint_marker(ui, rect, self.visible, mark.time, Color32::LIGHT_GREEN, 1.0);
         }
         if let Some(cursor) = self.cursor {
             paint_marker(ui, rect, self.visible, cursor, Color32::LIGHT_BLUE, 2.0);
+        }
+        for (index, mark) in self.marks.iter().enumerate() {
+            let total = self
+                .marks
+                .iter()
+                .filter(|candidate| candidate.time == mark.time)
+                .count();
+            let ordinal = self.marks[..index]
+                .iter()
+                .filter(|candidate| candidate.time == mark.time)
+                .count();
+            let offset = (ordinal as f32 - (total.saturating_sub(1)) as f32 * 0.5) * 15.0;
+            paint_marker_label(ui, rect, self.visible, *mark, offset);
         }
         paint_readout(
             ui,
@@ -218,6 +237,30 @@ fn paint_marker(ui: &Ui, rect: Rect, visible: TimeRange, time: u64, color: Color
         ui.painter()
             .vline(x, rect.y_range(), Stroke::new(width, color));
     }
+}
+
+fn paint_marker_label(ui: &Ui, rect: Rect, visible: TimeRange, marker: Marker, offset: f32) {
+    if !(visible.start <= marker.time && marker.time <= visible.end) {
+        return;
+    }
+    let x = (x_from_time(rect, visible, marker.time) + offset)
+        .clamp(rect.left() + 7.0, rect.right() - 7.0);
+    let badge = Rect::from_center_size(pos2(x, rect.center().y), Vec2::splat(14.0));
+    ui.painter()
+        .rect_filled(badge, 2.0, ui.visuals().extreme_bg_color);
+    ui.painter().rect_stroke(
+        badge,
+        2.0,
+        Stroke::new(1.0, Color32::LIGHT_GREEN),
+        egui::StrokeKind::Inside,
+    );
+    ui.painter().text(
+        badge.center(),
+        Align2::CENTER_CENTER,
+        marker.label,
+        FontId::new(10.0, FontFamily::Monospace),
+        Color32::LIGHT_GREEN,
+    );
 }
 
 fn paint_readout(

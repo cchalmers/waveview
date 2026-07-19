@@ -1,5 +1,5 @@
 use eframe::egui;
-use waveview_model::ui_types::TimelinePresentation;
+use waveview_model::ui_types::{MarkPresentation, TimelinePresentation};
 use waveview_model::viewer::ViewerCommand;
 
 pub fn height() -> f32 {
@@ -9,7 +9,7 @@ pub fn height() -> f32 {
 pub fn render(
     ui: &mut egui::Ui,
     presentation: TimelinePresentation,
-    marks: &[u64],
+    marks: &[MarkPresentation],
     commands: &mut Vec<ViewerCommand>,
 ) {
     let full = timeline::TimeRange::new(0, presentation.capture_end.max(1));
@@ -19,10 +19,17 @@ pub fn render(
         .measurement_start
         .zip(presentation.cursor)
         .map(|(start, end)| timeline::TimeRange::new(start, end));
+    let markers = marks
+        .iter()
+        .map(|mark| timeline::Marker {
+            time: mark.time,
+            label: mark.name,
+        })
+        .collect::<Vec<_>>();
     let response = timeline::Timeline::new(full, visible, &|time| time.to_string())
         .cursor(presentation.cursor)
         .selection(selection)
-        .marks(marks)
+        .marks(&markers)
         .show(ui);
 
     commands.extend(response.actions.into_iter().map(|action| match action {

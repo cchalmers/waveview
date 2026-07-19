@@ -72,9 +72,17 @@ pub fn render_view_menu(
     signal_browser_open: bool,
     info_open: bool,
     samples_open: bool,
+    marks_visible: bool,
     row_height: &mut f32,
 ) -> Option<MenuAction> {
-    menus::render_view(ui, signal_browser_open, info_open, samples_open, row_height)
+    menus::render_view(
+        ui,
+        signal_browser_open,
+        info_open,
+        samples_open,
+        marks_visible,
+        row_height,
+    )
 }
 
 pub fn render_help_menu(ui: &mut egui::Ui) -> Option<MenuAction> {
@@ -169,7 +177,7 @@ pub fn render_wave_canvas(
 pub fn render_timeline(
     ui: &mut egui::Ui,
     presentation: waveview_model::ui_types::TimelinePresentation,
-    marks: &[u64],
+    marks: &[waveview_model::ui_types::MarkPresentation],
     commands: &mut Vec<ViewerCommand>,
 ) {
     timeline_adapter::render(ui, presentation, marks, commands);

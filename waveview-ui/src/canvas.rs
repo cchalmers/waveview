@@ -1,6 +1,17 @@
 use eframe::egui;
-use waveview_model::viewer::{ViewerCommand, ViewerState};
+use waveview_model::viewer::{DisplayedItem, ViewerCommand, ViewerState};
+use waveview_model::waveform::WaveformSignal;
 use waveview_model::DisplayedItemId;
+
+type DisplayedSignal<'a> = (&'a WaveformSignal, &'a DisplayedItem);
+
+struct MarkGeometry {
+    canvas_rect: egui::Rect,
+    visible_rows: std::ops::Range<usize>,
+    row_height: f32,
+    view_start: f32,
+    pixels_per_tick: f32,
+}
 
 pub fn render(
     ui: &mut egui::Ui,
@@ -24,6 +35,13 @@ pub fn render(
                 .map(|signal| (signal, item))
         })
         .collect::<Vec<_>>();
+    let mark_geometry = MarkGeometry {
+        canvas_rect,
+        visible_rows: visible_rows.clone(),
+        row_height,
+        view_start,
+        pixels_per_tick,
+    };
 
     ui.painter().rect_filled(
         canvas_rect,
@@ -123,17 +141,8 @@ pub fn render(
         }
     }
 
-    for position in viewer.marks().values() {
-        let mark_x = canvas_rect.left() + (position.time() as f32 - view_start) * pixels_per_tick;
-        if canvas_rect.x_range().contains(mark_x) {
-            ui.painter().line_segment(
-                [
-                    egui::pos2(mark_x, interaction_rect.top()),
-                    egui::pos2(mark_x, interaction_rect.bottom()),
-                ],
-                egui::Stroke::new(1.0, egui::Color32::LIGHT_GREEN.linear_multiply(0.65)),
-            );
-        }
+    if viewer.marks_visible() {
+        paint_marks(ui, viewer, interaction_rect, &mark_geometry);
     }
 
     if let Some(cursor_time) = viewer.cursor() {
@@ -147,6 +156,10 @@ pub fn render(
                 egui::Stroke::new(1.0, egui::Color32::LIGHT_BLUE),
             );
         }
+    }
+
+    if viewer.marks_visible() {
+        paint_mark_badges(ui, viewer, &signals, &mark_geometry);
     }
 
     if response.drag_stopped() {
@@ -168,4 +181,96 @@ pub fn render(
         .flatten();
 
     (response, context_target)
+}
+
+fn paint_marks(
+    ui: &egui::Ui,
+    viewer: &ViewerState,
+    interaction_rect: egui::Rect,
+    geometry: &MarkGeometry,
+) {
+    for position in viewer.marks().values() {
+        let mark_x = geometry.canvas_rect.left()
+            + (position.time() as f32 - geometry.view_start) * geometry.pixels_per_tick;
+        if geometry.canvas_rect.x_range().contains(mark_x) {
+            ui.painter().line_segment(
+                [
+                    egui::pos2(mark_x, interaction_rect.top()),
+                    egui::pos2(mark_x, interaction_rect.bottom()),
+                ],
+                egui::Stroke::new(1.0, egui::Color32::LIGHT_GREEN.linear_multiply(0.65)),
+            );
+        }
+    }
+}
+
+fn paint_mark_badges(
+    ui: &egui::Ui,
+    viewer: &ViewerState,
+    signals: &[DisplayedSignal<'_>],
+    geometry: &MarkGeometry,
+) {
+    for (index, (&name, position)) in viewer.marks().iter().enumerate() {
+        let mark_x = geometry.canvas_rect.left()
+            + (position.time() as f32 - geometry.view_start) * geometry.pixels_per_tick;
+        let Some(row) = signals
+            .iter()
+            .position(|(_, item)| item.id() == position.item())
+            .filter(|row| geometry.visible_rows.contains(row))
+        else {
+            continue;
+        };
+        if geometry.canvas_rect.x_range().contains(mark_x) {
+            let total = viewer
+                .marks()
+                .values()
+                .filter(|candidate| {
+                    candidate.time() == position.time() && candidate.item() == position.item()
+                })
+                .count();
+            let ordinal = viewer
+                .marks()
+                .values()
+                .take(index)
+                .filter(|candidate| {
+                    candidate.time() == position.time() && candidate.item() == position.item()
+                })
+                .count();
+            let offset = (ordinal as f32 - (total.saturating_sub(1)) as f32 * 0.5) * 15.0;
+            let local_row = row - geometry.visible_rows.start;
+            let row_span = geometry.row_height + ui.spacing().item_spacing.y;
+            let center = egui::pos2(
+                (mark_x + offset).clamp(
+                    geometry.canvas_rect.left() + 7.0,
+                    geometry.canvas_rect.right() - 7.0,
+                ),
+                geometry.canvas_rect.top()
+                    + local_row as f32 * row_span
+                    + geometry.row_height * 0.5,
+            );
+            paint_mark_badge(ui, center, name);
+        }
+    }
+}
+
+fn paint_mark_badge(ui: &egui::Ui, center: egui::Pos2, name: char) {
+    let badge = egui::Rect::from_center_size(center, egui::Vec2::splat(14.0));
+    ui.painter().rect_filled(
+        badge,
+        2.0,
+        ui.visuals().extreme_bg_color.linear_multiply(0.92),
+    );
+    ui.painter().rect_stroke(
+        badge,
+        2.0,
+        egui::Stroke::new(1.0, egui::Color32::LIGHT_GREEN),
+        egui::StrokeKind::Inside,
+    );
+    ui.painter().text(
+        center,
+        egui::Align2::CENTER_CENTER,
+        name,
+        egui::FontId::monospace(10.0),
+        egui::Color32::LIGHT_GREEN,
+    );
 }

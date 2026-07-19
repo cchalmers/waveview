@@ -67,12 +67,15 @@ offer rebinding when a matching signal returns.
 
 - Local `a-z` marks store a displayed-item ID and exact capture time. `m{a-z}`, exact `` `{mark} ``,
   linewise `'{mark}`, and previous-jump `` `` ``/`''` syntax run through the Vim command engine.
-- Exact jumps restore signal and time; linewise jumps restore the signal while preserving the current
-  time. Both reveal the destination row, and previous-jump positions toggle in Vim fashion.
+- Backtick marks restore the marked signal and time; apostrophe marks restore only the marked time
+  while preserving the current signal. Previous-jump positions use the same distinction.
 - Mark jumps and `0`/`$` capture-bound motions populate a bounded jump list. Counted `Ctrl-O` and
   `Ctrl-I` traverse older and newer exact positions, and taking a new jump after going backward
   discards the abandoned forward branch.
-- Mark times are painted across the timeline and waveform canvas. `marks`, `delmarks <names>`, and
-  `delmarks all` provide the initial Molt lifecycle and report unresolved removed signals safely.
+- Named mark badges are painted on the timeline and at the marked waveform-row intersection, making
+  both time and attached signal visible. `marks`, `delmarks <names>`, and `delmarks all` provide the
+  initial Molt lifecycle and report unresolved removed signals safely.
+- Mark lines and badges can be hidden without deleting positions through View > Show marks or
+  `marks show|hide|toggle`; navigation and `marks` listing remain active while hidden.
 - Marks currently reset on waveform replacement; compatible-source preservation and unresolved-path
   rebinding remain part of the session/source identity work.

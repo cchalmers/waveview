@@ -40,6 +40,7 @@ pub fn render_view(
     signal_browser_open: bool,
     info_open: bool,
     samples_open: bool,
+    marks_visible: bool,
     row_height: &mut f32,
 ) -> Option<MenuAction> {
     let mut action = None;
@@ -51,6 +52,10 @@ pub fn render_view(
         action = Some(MenuAction::ToggleSignalBrowser);
     }
     ui.separator();
+    let mut show_marks = marks_visible;
+    if ui.checkbox(&mut show_marks, "Show marks").clicked() {
+        action = Some(MenuAction::ToggleMarks);
+    }
     if ui.button("Fit time").clicked() {
         action = Some(MenuAction::FitTime);
     }

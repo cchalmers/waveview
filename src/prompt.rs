@@ -57,7 +57,7 @@ fn command_help(_interp: &mut Interp, _id: ContextID, argv: &[Value]) -> MoltRes
          signal format binary|hex|unsigned|signed|ascii\n\
          signal alias <name> | signal unalias\n\
          signal color default|red|orange|yellow|green|cyan|blue|purple|gray\n\
-         marks | delmarks <a-z...>|all\n\
+         marks ?show|hide|toggle? | delmarks <a-z...>|all\n\
          search <regex>\n\
          undo | redo\n\
          Standard Tcl commands are also available."
@@ -259,8 +259,17 @@ fn command_signal_focus(interp: &mut Interp, id: ContextID, argv: &[Value]) -> M
 }
 
 fn command_marks(interp: &mut Interp, id: ContextID, argv: &[Value]) -> MoltResult {
-    molt::check_args(1, argv, 1, 1, "")?;
-    push_viewer_command(interp, id, ViewerCommand::RequestMarkList)
+    molt::check_args(1, argv, 1, 2, "?show|hide|toggle?")?;
+    match argv.get(1).map(|value| value.as_str()) {
+        None => push_viewer_command(interp, id, ViewerCommand::RequestMarkList),
+        Some("show") => push_viewer_command(interp, id, ViewerCommand::SetMarksVisible(true)),
+        Some("hide") => push_viewer_command(interp, id, ViewerCommand::SetMarksVisible(false)),
+        Some("toggle") => push_viewer_command(interp, id, ViewerCommand::ToggleMarksVisible),
+        Some(value) => molt::molt_err!(
+            "unknown marks action \"{}\": expected show, hide, or toggle",
+            value
+        ),
+    }
 }
 
 fn command_delmarks(interp: &mut Interp, id: ContextID, argv: &[Value]) -> MoltResult {
@@ -339,7 +348,7 @@ mod tests {
     fn viewer_commands_are_queued_without_borrowing_viewer_state() {
         let mut prompt = PromptRuntime::default();
         prompt.set_input(
-            "zoom fit; cursor set 42; signal focus previous 2; signal format signed; signal alias {program counter}; signal color cyan; marks; delmarks ab; search {clock.*}; undo"
+            "zoom fit; cursor set 42; signal focus previous 2; signal format signed; signal alias {program counter}; signal color cyan; marks hide; marks toggle; marks; delmarks ab; search {clock.*}; undo"
                 .to_owned(),
         );
 
@@ -353,6 +362,8 @@ mod tests {
                 ViewerCommand::SetFocusedValueFormat(ValueFormat::Signed),
                 ViewerCommand::SetFocusedAlias(Some("program counter".to_owned())),
                 ViewerCommand::SetFocusedColor(DisplayColor::Cyan),
+                ViewerCommand::SetMarksVisible(false),
+                ViewerCommand::ToggleMarksVisible,
                 ViewerCommand::RequestMarkList,
                 ViewerCommand::DeleteMarks(vec!['a', 'b']),
                 ViewerCommand::SetSearch("clock.*".to_owned()),
@@ -369,6 +380,6 @@ mod tests {
         assert!(prompt
             .output()
             .iter()
-            .any(|entry| entry.text.contains("marks | delmarks")));
+            .any(|entry| entry.text.contains("marks ?show|hide|toggle?")));
     }
 }

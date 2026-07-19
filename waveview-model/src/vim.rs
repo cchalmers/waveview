@@ -1,5 +1,5 @@
 use crate::search::SearchMatcher;
-use crate::viewer::{FocusPlacement, ViewerCommand, ViewerState};
+use crate::viewer::{FocusPlacement, MarkJumpTarget, ViewerCommand, ViewerState};
 use crate::vim_types::RepeatableChange;
 pub use crate::vim_types::{VimInput, VimMode, VimState};
 
@@ -208,19 +208,29 @@ impl VimState {
             }
             ("`", '`') => {
                 self.count = None;
-                vec![ViewerCommand::JumpToPrevious { exact: true }]
+                vec![ViewerCommand::JumpToPrevious {
+                    target: MarkJumpTarget::SignalAndTime,
+                }]
             }
             ("'", '\'') => {
                 self.count = None;
-                vec![ViewerCommand::JumpToPrevious { exact: false }]
+                vec![ViewerCommand::JumpToPrevious {
+                    target: MarkJumpTarget::Time,
+                }]
             }
             ("`", name) if name.is_ascii_lowercase() => {
                 self.count = None;
-                vec![ViewerCommand::JumpToMark { name, exact: true }]
+                vec![ViewerCommand::JumpToMark {
+                    name,
+                    target: MarkJumpTarget::SignalAndTime,
+                }]
             }
             ("'", name) if name.is_ascii_lowercase() => {
                 self.count = None;
-                vec![ViewerCommand::JumpToMark { name, exact: false }]
+                vec![ViewerCommand::JumpToMark {
+                    name,
+                    target: MarkJumpTarget::Time,
+                }]
             }
             _ => {
                 self.count = None;
@@ -482,7 +492,7 @@ pub const NORMAL_BINDINGS: &[Binding] = &[
     },
     Binding {
         keys: "`{mark} / '{mark}",
-        description: "jump to exact / signal-only mark position",
+        description: "jump to marked signal+time / time only",
     },
     Binding {
         keys: "`` / ''",
@@ -698,7 +708,7 @@ mod tests {
     }
 
     #[test]
-    fn mark_commands_follow_vim_exact_and_linewise_syntax() {
+    fn mark_commands_distinguish_full_and_time_only_jumps() {
         let viewer = viewer();
         let mut vim = VimState::default();
 
@@ -718,7 +728,7 @@ mod tests {
             ),
             vec![ViewerCommand::JumpToMark {
                 name: 'a',
-                exact: true,
+                target: MarkJumpTarget::SignalAndTime,
             }]
         );
         assert_eq!(
@@ -729,7 +739,7 @@ mod tests {
             ),
             vec![ViewerCommand::JumpToMark {
                 name: 'a',
-                exact: false,
+                target: MarkJumpTarget::Time,
             }]
         );
         assert_eq!(
@@ -738,7 +748,9 @@ mod tests {
                 &viewer,
                 &[VimInput::Char('`'), VimInput::Char('`')]
             ),
-            vec![ViewerCommand::JumpToPrevious { exact: true }]
+            vec![ViewerCommand::JumpToPrevious {
+                target: MarkJumpTarget::SignalAndTime,
+            }]
         );
         assert_eq!(
             keys(

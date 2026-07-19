@@ -234,6 +234,12 @@ pub struct MarkPosition {
     time: u64,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum MarkJumpTarget {
+    SignalAndTime,
+    Time,
+}
+
 impl MarkPosition {
     pub fn item(self) -> DisplayedItemId {
         self.item
@@ -278,6 +284,7 @@ pub struct ViewerState {
     previous_jump: Option<MarkPosition>,
     jump_list: Vec<MarkPosition>,
     jump_index: Option<usize>,
+    marks_visible: bool,
     display_undo: Vec<Vec<DisplayedItem>>,
     display_redo: Vec<Vec<DisplayedItem>>,
     next_displayed_item_id: u64,
@@ -306,6 +313,7 @@ impl ViewerState {
             previous_jump: None,
             jump_list: Vec::new(),
             jump_index: None,
+            marks_visible: true,
             display_undo: Vec::new(),
             display_redo: Vec::new(),
             next_displayed_item_id,
@@ -342,6 +350,10 @@ impl ViewerState {
 
     pub fn marks(&self) -> &BTreeMap<char, MarkPosition> {
         &self.marks
+    }
+
+    pub fn marks_visible(&self) -> bool {
+        self.marks_visible
     }
 
     /// Apply one command and return host work requested by that command.
@@ -519,14 +531,14 @@ impl ViewerState {
                     }
                 }
             }
-            ViewerCommand::JumpToMark { name, exact } => {
+            ViewerCommand::JumpToMark { name, target } => {
                 if let Some(position) = self.marks.get(&name).copied() {
-                    return self.jump_to_position(position, exact, true);
+                    return self.jump_to_position(position, target, true);
                 }
             }
-            ViewerCommand::JumpToPrevious { exact } => {
+            ViewerCommand::JumpToPrevious { target } => {
                 if let Some(position) = self.previous_jump {
-                    return self.jump_to_position(position, exact, true);
+                    return self.jump_to_position(position, target, true);
                 }
             }
             ViewerCommand::TraverseJumpList(delta) => {
@@ -538,6 +550,8 @@ impl ViewerState {
                 }
             }
             ViewerCommand::ClearMarks => self.marks.clear(),
+            ViewerCommand::SetMarksVisible(visible) => self.marks_visible = visible,
+            ViewerCommand::ToggleMarksVisible => self.marks_visible = !self.marks_visible,
             ViewerCommand::RequestMarkList => {
                 return vec![EffectRequest::PromptText(self.mark_list())];
             }
@@ -645,29 +659,33 @@ impl ViewerState {
     fn jump_to_position(
         &mut self,
         position: MarkPosition,
-        exact: bool,
+        target: MarkJumpTarget,
         record_previous: bool,
     ) -> Vec<EffectRequest> {
-        if !self
+        let item_resolved = self
             .displayed_items
             .iter()
-            .any(|item| item.id == position.item)
-        {
+            .any(|item| item.id == position.item);
+        if target == MarkJumpTarget::SignalAndTime && !item_resolved {
             return Vec::new();
         }
         let previous = self.current_position();
-        self.cursor.focused_item = Some(position.item);
-        if exact {
-            let time = position.time.min(self.capture_end());
-            self.cursor.time = Some(time);
-            self.viewport.reveal(time as f64, self.capture_end());
+        if target == MarkJumpTarget::SignalAndTime {
+            self.cursor.focused_item = Some(position.item);
         }
+        let time = position.time.min(self.capture_end());
+        self.cursor.time = Some(time);
+        self.viewport.reveal(time as f64, self.capture_end());
         if record_previous {
             if let Some(previous) = previous {
                 self.record_jump(previous);
             }
         }
-        vec![EffectRequest::RevealFocusedItem(FocusPlacement::Center)]
+        if target == MarkJumpTarget::SignalAndTime {
+            vec![EffectRequest::RevealFocusedItem(FocusPlacement::Center)]
+        } else {
+            Vec::new()
+        }
     }
 
     fn record_jump(&mut self, origin: MarkPosition) {
@@ -704,7 +722,7 @@ impl ViewerState {
             return Vec::new();
         }
         self.jump_index = Some(target);
-        self.jump_to_position(self.jump_list[target], true, false)
+        self.jump_to_position(self.jump_list[target], MarkJumpTarget::SignalAndTime, false)
     }
 
     fn mark_list(&self) -> String {
@@ -816,14 +834,16 @@ pub enum ViewerCommand {
     SetMark(char),
     JumpToMark {
         name: char,
-        exact: bool,
+        target: MarkJumpTarget,
     },
     JumpToPrevious {
-        exact: bool,
+        target: MarkJumpTarget,
     },
     TraverseJumpList(isize),
     DeleteMarks(Vec<char>),
     ClearMarks,
+    SetMarksVisible(bool),
+    ToggleMarksVisible,
     RequestMarkList,
     UndoDisplayChange,
     RedoDisplayChange,
@@ -1071,7 +1091,7 @@ mod tests {
     }
 
     #[test]
-    fn marks_jump_exactly_or_linewise_and_track_the_previous_position() {
+    fn marks_jump_to_full_or_time_only_positions_and_track_the_previous_position() {
         let mut state = state_with_signals(2);
         let first = state.displayed_items()[0].id();
         let second = state.displayed_items()[1].id();
@@ -1083,29 +1103,36 @@ mod tests {
         assert_eq!(
             state.apply(ViewerCommand::JumpToMark {
                 name: 'a',
-                exact: true,
+                target: MarkJumpTarget::SignalAndTime,
             }),
             vec![EffectRequest::RevealFocusedItem(FocusPlacement::Center)]
         );
         assert_eq!(state.cursor_state().focused_item(), Some(first));
         assert_eq!(state.cursor(), Some(20));
 
-        state.apply(ViewerCommand::JumpToPrevious { exact: true });
+        state.apply(ViewerCommand::JumpToPrevious {
+            target: MarkJumpTarget::SignalAndTime,
+        });
         assert_eq!(state.cursor_state().focused_item(), Some(second));
         assert_eq!(state.cursor(), Some(80));
 
         state.apply(ViewerCommand::SetCursor(60));
         state.apply(ViewerCommand::JumpToMark {
             name: 'a',
-            exact: false,
+            target: MarkJumpTarget::Time,
         });
-        assert_eq!(state.cursor_state().focused_item(), Some(first));
-        assert_eq!(state.cursor(), Some(60));
+        assert_eq!(state.cursor_state().focused_item(), Some(second));
+        assert_eq!(state.cursor(), Some(20));
     }
 
     #[test]
     fn mark_listing_and_deletion_are_command_driven() {
         let mut state = state_with_signals(1);
+        assert!(state.marks_visible());
+        state.apply(ViewerCommand::ToggleMarksVisible);
+        assert!(!state.marks_visible());
+        state.apply(ViewerCommand::SetMarksVisible(true));
+        assert!(state.marks_visible());
         state.apply(ViewerCommand::SetCursor(12));
         state.apply(ViewerCommand::SetMark('b'));
 
@@ -1135,11 +1162,11 @@ mod tests {
 
         state.apply(ViewerCommand::JumpToMark {
             name: 'a',
-            exact: true,
+            target: MarkJumpTarget::SignalAndTime,
         });
         state.apply(ViewerCommand::JumpToMark {
             name: 'b',
-            exact: true,
+            target: MarkJumpTarget::SignalAndTime,
         });
         state.apply(ViewerCommand::TraverseJumpList(-1));
         assert_eq!(state.cursor_state().focused_item(), Some(first));

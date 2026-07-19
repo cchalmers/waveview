@@ -2,7 +2,8 @@ use eframe::egui;
 use std::collections::HashSet;
 use waveview_model::search::SearchMatcher;
 use waveview_model::ui_types::{
-    MenuAction, PromptOutput, SignalMenuAction, SignalPresentation, TimelinePresentation,
+    MarkPresentation, MenuAction, PromptOutput, SignalMenuAction, SignalPresentation,
+    TimelinePresentation,
 };
 use waveview_model::viewer::ViewerCommand;
 use waveview_model::viewer::ViewerState;
@@ -108,13 +109,28 @@ pub fn render_view_menu(
     signal_browser_open: bool,
     info_open: bool,
     samples_open: bool,
+    marks_visible: bool,
     row_height: &mut f32,
 ) -> Option<MenuAction> {
     #[cfg(all(feature = "reload", not(target_arch = "wasm32")))]
-    return hot_ui::render_view_menu(ui, signal_browser_open, info_open, samples_open, row_height);
+    return hot_ui::render_view_menu(
+        ui,
+        signal_browser_open,
+        info_open,
+        samples_open,
+        marks_visible,
+        row_height,
+    );
 
     #[cfg(not(all(feature = "reload", not(target_arch = "wasm32"))))]
-    waveview_ui::render_view_menu(ui, signal_browser_open, info_open, samples_open, row_height)
+    waveview_ui::render_view_menu(
+        ui,
+        signal_browser_open,
+        info_open,
+        samples_open,
+        marks_visible,
+        row_height,
+    )
 }
 
 pub fn render_help_menu(ui: &mut egui::Ui) -> Option<MenuAction> {
@@ -250,7 +266,7 @@ pub fn timeline_height() -> f32 {
 pub fn render_timeline(
     ui: &mut egui::Ui,
     presentation: TimelinePresentation,
-    marks: &[u64],
+    marks: &[MarkPresentation],
     commands: &mut Vec<ViewerCommand>,
 ) {
     #[cfg(all(feature = "reload", not(target_arch = "wasm32")))]

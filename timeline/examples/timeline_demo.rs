@@ -1,5 +1,5 @@
 use eframe::egui;
-use timeline::{Action, TimeRange, Timeline};
+use timeline::{Action, Marker, TimeRange, Timeline};
 
 struct Demo {
     visible: TimeRange,
@@ -21,7 +21,20 @@ impl eframe::App for Demo {
             let full = TimeRange::new(0, 10_000);
             let response = Timeline::new(full, self.visible, &|time| time.to_string())
                 .cursor(self.cursor)
-                .marks(&[100, 500, 900])
+                .marks(&[
+                    Marker {
+                        time: 100,
+                        label: 'a',
+                    },
+                    Marker {
+                        time: 500,
+                        label: 'b',
+                    },
+                    Marker {
+                        time: 900,
+                        label: 'c',
+                    },
+                ])
                 .show(ui);
             for action in response.actions {
                 match action {
