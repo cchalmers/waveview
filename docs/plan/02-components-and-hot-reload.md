@@ -94,6 +94,9 @@ move its dirty worktree or retain its websocket/backend coupling.
 - File/Edit/View/Help contents are reloadable, including their labels, ordering, visibility and
   row-height control. The stable host owns the popup containers and executes the shared
   `MenuAction` intent, so file dialogs and durable application state do not cross the dylib.
+- Waveview's command console uses reloadable `eprompt` presentation inside a host-owned panel,
+  `TextEdit`, and `ScrollArea`. The Molt interpreter, input/history/transcript, and focus state
+  survive reloads without retaining dylib-owned egui state.
 - The reload runner reports building/failure state inside the viewer and leaves the last valid dylib
   active after a compilation error. Host/shared/ABI edits produce a sticky restart-required status;
   Vim behavior and shared Vim state live in separate files so the watcher boundary is explicit.

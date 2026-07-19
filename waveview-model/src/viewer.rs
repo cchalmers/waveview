@@ -355,6 +355,9 @@ impl ViewerState {
                 self.search.clear();
                 return vec![EffectRequest::FocusSearch];
             }
+            ViewerCommand::BeginCommandPrompt => {
+                return vec![EffectRequest::FocusCommandPrompt];
+            }
             ViewerCommand::RevealFocusedItem(placement) => {
                 return vec![EffectRequest::RevealFocusedItem(placement)];
             }
@@ -461,6 +464,7 @@ pub enum ViewerCommand {
     ScrollDisplayedRows(isize),
     ScrollDisplayedHalfPages(isize),
     BeginSearch,
+    BeginCommandPrompt,
     RevealFocusedItem(FocusPlacement),
     SelectVisibleRow {
         placement: FocusPlacement,
@@ -478,6 +482,7 @@ pub enum EffectRequest {
     ScrollDisplayedRows(isize),
     ScrollDisplayedHalfPages(isize),
     FocusSearch,
+    FocusCommandPrompt,
     RevealFocusedItem(FocusPlacement),
     SelectVisibleRow {
         placement: FocusPlacement,
@@ -669,6 +674,15 @@ mod tests {
 
         assert_eq!(state.search(), "");
         assert_eq!(effects, vec![EffectRequest::FocusSearch]);
+    }
+
+    #[test]
+    fn beginning_a_command_prompt_is_a_host_effect() {
+        let mut viewer = ViewerState::default();
+        assert_eq!(
+            viewer.apply(ViewerCommand::BeginCommandPrompt),
+            vec![EffectRequest::FocusCommandPrompt]
+        );
     }
 
     #[test]

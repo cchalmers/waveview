@@ -7,6 +7,7 @@ pub use waveview_model::vcd;
 mod wave_dispatch;
 pub use app::TemplateApp;
 mod live;
+mod prompt;
 pub mod samples;
 
 pub use wave_dispatch::install_reload_repaint;

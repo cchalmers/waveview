@@ -46,10 +46,13 @@ pub struct TemplateApp {
     #[serde(skip)]
     show_key_help: bool,
     #[serde(skip)]
+    prompt: crate::prompt::PromptRuntime,
+    #[serde(skip)]
     status_message: Option<String>,
     #[serde(skip)]
     status_expires_at: f64,
     search_history: SearchHistory,
+    command_history: SearchHistory,
     selected_activity: Option<Activity>,
     signal_browser_search: String,
     expanded_signal_scopes: HashSet<String>,
@@ -90,9 +93,11 @@ impl Default for TemplateApp {
             },
             vim: VimState::default(),
             show_key_help: false,
+            prompt: crate::prompt::PromptRuntime::default(),
             status_message: None,
             status_expires_at: 0.0,
             search_history: SearchHistory::default(),
+            command_history: SearchHistory::default(),
             selected_activity: Some(Activity::Signals),
             signal_browser_search: String::new(),
             expanded_signal_scopes: HashSet::new(),
@@ -200,9 +205,11 @@ impl TemplateApp {
             info: Info { rect: Rect::NOTHING, min_rect: Rect::NOTHING, max_rect: Rect::NOTHING, viewport: Rect::NOTHING, pixels_per_tick: 0.0 },
             vim: VimState::default(),
             show_key_help: false,
+            prompt: crate::prompt::PromptRuntime::default(),
             status_message: None,
             status_expires_at: 0.0,
             search_history: SearchHistory::default(),
+            command_history: SearchHistory::default(),
             selected_activity: Some(Activity::Signals),
             signal_browser_search: String::new(),
             expanded_signal_scopes: HashSet::new(),
@@ -335,9 +342,11 @@ impl eframe::App for TemplateApp {
             info,
             vim,
             show_key_help,
+            prompt,
             status_message,
             status_expires_at,
             search_history,
+            command_history,
             selected_activity,
             signal_browser_search,
             expanded_signal_scopes,
@@ -422,13 +431,16 @@ impl eframe::App for TemplateApp {
         let search_has_focus = ctx.memory(|memory| memory.has_focus(signal_search_id()));
         let browser_search_has_focus =
             ctx.memory(|memory| memory.has_focus(signal_browser_search_id()));
+        let prompt_has_focus = ctx.memory(|memory| memory.has_focus(command_prompt_id()));
         let keyboard_captured = search_has_focus
             || browser_search_has_focus
+            || prompt.is_open()
             || url_window.open
             || err_window.open
             || live.open
             || *show_key_help;
         let search_inputs = take_search_inputs(&ctx, search_has_focus);
+        let prompt_inputs = take_search_inputs(&ctx, prompt_has_focus);
         let mut reveal_keyboard_focus = false;
         let mut keyboard_half_page_scroll = 0_isize;
         let mut keyboard_focus_placement = None;
@@ -462,9 +474,29 @@ impl eframe::App for TemplateApp {
                 }
             }
         }
+        for input in prompt_inputs {
+            match input {
+                SearchInput::Previous => {
+                    if let Some(command) = command_history.previous(prompt.input()) {
+                        prompt.set_input(command);
+                    }
+                }
+                SearchInput::Next => {
+                    if let Some(command) = command_history.newer() {
+                        prompt.set_input(command);
+                    }
+                }
+                SearchInput::Accept => {
+                    command_history.accept(prompt.input());
+                    prompt.submit();
+                }
+            }
+        }
         for input in take_vim_inputs(&ctx, keyboard_captured) {
             if input == VimInput::Escape {
-                if *show_key_help {
+                if prompt.is_open() {
+                    prompt.close();
+                } else if *show_key_help {
                     *show_key_help = false;
                 } else if url_window.open {
                     url_window.open = false;
@@ -511,6 +543,11 @@ impl eframe::App for TemplateApp {
                         EffectRequest::FocusSearch => {
                             search_history.reset_navigation();
                             ctx.memory_mut(|memory| memory.request_focus(signal_search_id()));
+                        }
+                        EffectRequest::FocusCommandPrompt => {
+                            command_history.reset_navigation();
+                            prompt.open();
+                            ctx.memory_mut(|memory| memory.request_focus(command_prompt_id()));
                         }
                         EffectRequest::RevealFocusedItem(placement) => {
                             keyboard_focus_placement = Some(placement);
@@ -748,6 +785,45 @@ impl eframe::App for TemplateApp {
                     ));
             }
         });
+
+        if prompt.is_open() {
+            egui::Panel::bottom("command_prompt")
+                .default_size(wave_dispatch::prompt_height())
+                .min_size(100.0)
+                .resizable(true)
+                .show(root_ui, |ui| {
+                    wave_dispatch::render_prompt_header(ui);
+                    ui.separator();
+                    ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+                        ui.horizontal(|ui| {
+                            wave_dispatch::render_prompt_prefix(ui);
+                            let response = ui.add(
+                                egui::TextEdit::singleline(prompt.input_mut())
+                                    .id(command_prompt_id())
+                                    .font(egui::TextStyle::Monospace)
+                                    .frame(egui::Frame::NONE)
+                                    .desired_width(f32::INFINITY),
+                            );
+                            if prompt.take_focus_request() {
+                                response.request_focus();
+                            }
+                        });
+                        ui.separator();
+                        egui::ScrollArea::vertical()
+                            .id_salt("command_prompt_output")
+                            .stick_to_bottom(true)
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                ui.with_layout(
+                                    egui::Layout::bottom_up(egui::Align::Min),
+                                    |ui| {
+                                        wave_dispatch::render_prompt_output(ui, prompt.output());
+                                    },
+                                );
+                            });
+                    });
+                });
+        }
 
         if let Some((placement, count)) = keyboard_select_visible {
             let row_span = *row_height + root_ui.spacing().item_spacing.y;
@@ -1223,6 +1299,10 @@ fn signal_search_id() -> egui::Id {
 
 fn signal_browser_search_id() -> egui::Id {
     egui::Id::new("signal_browser_search")
+}
+
+fn command_prompt_id() -> egui::Id {
+    egui::Id::new("command_prompt_input")
 }
 
 fn ctrl_key_character(key: egui::Key) -> Option<char> {

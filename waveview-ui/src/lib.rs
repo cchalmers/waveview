@@ -4,6 +4,7 @@ mod activity;
 mod canvas;
 mod displayed_items;
 mod menus;
+mod prompt_adapter;
 mod signal_browser;
 mod timeline_adapter;
 mod vim_ui;
@@ -12,7 +13,7 @@ mod wave;
 use eframe::egui;
 use std::collections::HashSet;
 use waveview_model::search::SearchMatcher;
-use waveview_model::ui_types::MenuAction;
+use waveview_model::ui_types::{MenuAction, PromptOutput};
 use waveview_model::viewer::ViewerCommand;
 use waveview_model::viewer::ViewerState;
 use waveview_model::vim::{VimInput, VimState};
@@ -63,6 +64,22 @@ pub fn render_view_menu(
 
 pub fn render_help_menu(ui: &mut egui::Ui) -> Option<MenuAction> {
     menus::render_help(ui)
+}
+
+pub fn prompt_height() -> f32 {
+    prompt_adapter::default_height()
+}
+
+pub fn render_prompt_header(ui: &mut egui::Ui) {
+    prompt_adapter::render_header(ui);
+}
+
+pub fn render_prompt_output(ui: &mut egui::Ui, output: &[PromptOutput]) {
+    prompt_adapter::render_output(ui, output);
+}
+
+pub fn render_prompt_prefix(ui: &mut egui::Ui) {
+    prompt_adapter::render_prefix(ui);
 }
 
 pub fn render_signal_browser_header(ui: &mut egui::Ui, all_signals_displayed: bool) -> bool {

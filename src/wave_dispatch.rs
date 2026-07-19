@@ -1,7 +1,7 @@
 use eframe::egui;
 use std::collections::HashSet;
 use waveview_model::search::SearchMatcher;
-use waveview_model::ui_types::MenuAction;
+use waveview_model::ui_types::{MenuAction, PromptOutput};
 use waveview_model::viewer::ViewerCommand;
 use waveview_model::viewer::ViewerState;
 use waveview_model::waveform::Waveform;
@@ -20,7 +20,7 @@ mod hot_ui {
     use eframe::egui;
     use std::collections::HashSet;
     use waveview_model::search::SearchMatcher;
-    use waveview_model::ui_types::MenuAction;
+    use waveview_model::ui_types::{MenuAction, PromptOutput};
     use waveview_model::viewer::ViewerCommand;
     use waveview_model::viewer::ViewerState;
     use waveview_model::vim::{VimInput, VimState};
@@ -105,6 +105,38 @@ pub fn render_help_menu(ui: &mut egui::Ui) -> Option<MenuAction> {
 
     #[cfg(not(all(feature = "reload", not(target_arch = "wasm32"))))]
     waveview_ui::render_help_menu(ui)
+}
+
+pub fn prompt_height() -> f32 {
+    #[cfg(all(feature = "reload", not(target_arch = "wasm32")))]
+    return hot_ui::prompt_height();
+
+    #[cfg(not(all(feature = "reload", not(target_arch = "wasm32"))))]
+    waveview_ui::prompt_height()
+}
+
+pub fn render_prompt_header(ui: &mut egui::Ui) {
+    #[cfg(all(feature = "reload", not(target_arch = "wasm32")))]
+    hot_ui::render_prompt_header(ui);
+
+    #[cfg(not(all(feature = "reload", not(target_arch = "wasm32"))))]
+    waveview_ui::render_prompt_header(ui);
+}
+
+pub fn render_prompt_output(ui: &mut egui::Ui, output: &[PromptOutput]) {
+    #[cfg(all(feature = "reload", not(target_arch = "wasm32")))]
+    hot_ui::render_prompt_output(ui, output);
+
+    #[cfg(not(all(feature = "reload", not(target_arch = "wasm32"))))]
+    waveview_ui::render_prompt_output(ui, output);
+}
+
+pub fn render_prompt_prefix(ui: &mut egui::Ui) {
+    #[cfg(all(feature = "reload", not(target_arch = "wasm32")))]
+    hot_ui::render_prompt_prefix(ui);
+
+    #[cfg(not(all(feature = "reload", not(target_arch = "wasm32"))))]
+    waveview_ui::render_prompt_prefix(ui);
 }
 
 pub fn render_signal_browser_header(ui: &mut egui::Ui, all_signals_displayed: bool) -> bool {

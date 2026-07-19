@@ -40,8 +40,9 @@ edit:
 In practical terms, waveform/timeline painting, canvas hover/cursor/measurement interaction,
 wheel zoom and horizontal pan, activity icons, the available-signal browser header/tree,
 signal-name/search painting, Vim command interpretation, mode status, and keyboard help can be
-changed without losing the loaded capture or viewer state. `eprompt` is rebuilt into the same
-library, although Waveview does not use it yet. Application/panel orchestration, stateful egui
+changed without losing the loaded capture or viewer state. The command-console header, prompt
+prefix, and transcript presentation use `eprompt` through the same library. Application/panel
+orchestration, stateful egui
 containers (`TextEdit`, `ScrollArea`, drag-and-drop), file loading, shared
 model/search/waveform types and behavior, Vim state fields, and exported dynamic-library signatures
 need a restart. `vim_types.rs` is intentionally separate from `vim.rs` so that this distinction is
@@ -54,6 +55,7 @@ The hot-side code is split by editing surface while still producing one dylib:
 | Activity-bar controls | `waveview-ui/src/activity.rs` |
 | Available-signal hierarchy | `waveview-ui/src/signal_browser.rs` |
 | Menu contents and controls | `waveview-ui/src/menus.rs` |
+| Command-console presentation | `waveview-ui/src/prompt_adapter.rs`, `eprompt/src/lib.rs` |
 | Displayed signal rows/search highlighting | `waveview-ui/src/displayed_items.rs` |
 | Waveform rows and canvas interaction | `waveview-ui/src/canvas.rs`, `waveview-ui/src/wave.rs` |
 | Timeline-to-viewer action mapping | `waveview-ui/src/timeline_adapter.rs` |
@@ -68,6 +70,11 @@ created by one dylib from surviving after that dylib is unloaded while allowing 
 contents and interactions to reload. Top-level menu popups follow the same rule: the host creates
 the popup, reloadable code paints its contents and emits a `MenuAction`, and the host performs the
 file, window, or model effect.
+
+The command console applies this rule more strictly: its Molt interpreter, input/history/output,
+`TextEdit`, and transcript `ScrollArea` are host-owned. Reloadable code paints the stateless
+presentation inside those containers. This avoids leaving persisted egui `TypeId` state behind
+when a dylib is unloaded.
 
 A failed hot build leaves the previous UI active and shows a nonfatal failure message; compiler
 diagnostics remain in the terminal. Editing a restart-only file shows a persistent yellow `restart

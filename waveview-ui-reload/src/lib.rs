@@ -3,7 +3,7 @@
 use eframe::egui;
 use std::collections::HashSet;
 use waveview_model::search::SearchMatcher;
-use waveview_model::ui_types::MenuAction;
+use waveview_model::ui_types::{MenuAction, PromptOutput};
 use waveview_model::viewer::ViewerCommand;
 use waveview_model::viewer::ViewerState;
 use waveview_model::vim::{VimInput, VimState};
@@ -61,6 +61,26 @@ pub fn render_view_menu(
 #[unsafe(no_mangle)]
 pub fn render_help_menu(ui: &mut egui::Ui) -> Option<MenuAction> {
     waveview_ui::render_help_menu(ui)
+}
+
+#[unsafe(no_mangle)]
+pub fn prompt_height() -> f32 {
+    waveview_ui::prompt_height()
+}
+
+#[unsafe(no_mangle)]
+pub fn render_prompt_header(ui: &mut egui::Ui) {
+    waveview_ui::render_prompt_header(ui);
+}
+
+#[unsafe(no_mangle)]
+pub fn render_prompt_output(ui: &mut egui::Ui, output: &[PromptOutput]) {
+    waveview_ui::render_prompt_output(ui, output);
+}
+
+#[unsafe(no_mangle)]
+pub fn render_prompt_prefix(ui: &mut egui::Ui) {
+    waveview_ui::render_prompt_prefix(ui);
 }
 
 #[unsafe(no_mangle)]

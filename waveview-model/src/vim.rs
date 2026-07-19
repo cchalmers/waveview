@@ -113,6 +113,10 @@ impl VimState {
                 self.cancel();
                 vec![ViewerCommand::BeginSearch]
             }
+            ':' => {
+                self.cancel();
+                vec![ViewerCommand::BeginCommandPrompt]
+            }
             '0' => {
                 self.cancel();
                 vec![ViewerCommand::SetCursor(0), ViewerCommand::RevealTime(0)]
@@ -741,6 +745,16 @@ mod tests {
                 placement: FocusPlacement::Top,
                 count: 2,
             }]
+        );
+    }
+
+    #[test]
+    fn colon_opens_the_command_prompt() {
+        let viewer = viewer();
+        let mut vim = VimState::default();
+        assert_eq!(
+            vim.handle(VimInput::Char(':'), false, &viewer),
+            vec![ViewerCommand::BeginCommandPrompt]
         );
     }
 

@@ -31,6 +31,8 @@ Add a waveview host module, not a dependency from `eprompt`:
 Before integration, audit the dirty sibling Molt fork, record why it differs from upstream, and pin
 the chosen source/revision. Do not silently depend on an uncommitted path checkout.
 
+See [`../molt-audit.md`](../molt-audit.md) for the completed audit and pinned upstream revision.
+
 ## Initial Tcl vocabulary
 
 ```tcl
@@ -69,3 +71,16 @@ single command string. Tcl commands translate to the same viewer commands used b
 - `:` commands can reproduce core loading, display, navigation, formatting, and mark operations.
 - A Tcl script can configure a freshly loaded waveform deterministically.
 - Invalid scripts, backend errors, and asynchronous failures remain visible and nonfatal.
+
+## Current progress
+
+- `:` now opens a Waveview command console with host-owned focus, input, persistent history,
+  bounded transcript, and a persistent Molt interpreter.
+- Standard Tcl evaluation works; `puts` is redirected into the transcript and results/errors use
+  distinct generic output kinds.
+- The stateful `TextEdit` and `ScrollArea` remain in the stable host. Header, prompt prefix, and
+  transcript styling route through reloadable `eprompt` presentation helpers.
+- The dirty sibling fork has been audited and its minimal interpreter crate vendored with its
+  BSD-3-Clause license and attribution. Non-library projects and documentation are omitted, and
+  `eprompt` remains independent of Molt.
+- Waveview-specific Tcl commands and completion remain to be implemented.

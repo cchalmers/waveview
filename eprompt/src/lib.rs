@@ -231,11 +231,7 @@ impl<'a> Prompt<'a> {
                             ui.set_min_size(transcript_rect.size());
                             ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
                                 for entry in output.iter().rev() {
-                                    ui.label(
-                                        RichText::new(&entry.text)
-                                            .monospace()
-                                            .color(output_color(ui, entry.kind)),
-                                    );
+                                    render_output_entry(ui, entry);
                                 }
                             });
                         });
@@ -280,6 +276,25 @@ pub fn show_panel(title: &str, ui: &mut Ui, prompt: Prompt<'_>) -> PromptRespons
     ui.heading(title);
     ui.separator();
     prompt.show(ui)
+}
+
+/// Paint one transcript entry without owning scroll or prompt state.
+pub fn render_output_entry(ui: &mut Ui, entry: &OutputEntry) {
+    ui.label(
+        RichText::new(&entry.text)
+            .monospace()
+            .color(output_color(ui, entry.kind)),
+    );
+}
+
+/// Paint the label beside a caller-owned text editor.
+pub fn render_prompt_label(ui: &mut Ui, prompt: &str) {
+    ui.label(
+        RichText::new(prompt)
+            .monospace()
+            .strong()
+            .color(Color32::LIGHT_BLUE),
+    );
 }
 
 fn output_color(ui: &Ui, kind: OutputKind) -> Color32 {
