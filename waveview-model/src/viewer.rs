@@ -282,6 +282,28 @@ impl ViewerState {
                     self.cursor.focused_item = Some(id);
                 }
             }
+            ViewerCommand::FocusDisplayedRelative(delta) => {
+                let navigable = self
+                    .displayed_items
+                    .iter()
+                    .filter(|item| item.signal_id().is_some())
+                    .collect::<Vec<_>>();
+                if !navigable.is_empty() {
+                    let current = self
+                        .cursor
+                        .focused_item
+                        .and_then(|focused| navigable.iter().position(|item| item.id == focused));
+                    let target = current.map_or_else(
+                        || if delta < 0 { navigable.len() - 1 } else { 0 },
+                        |current| {
+                            current
+                                .saturating_add_signed(delta)
+                                .min(navigable.len() - 1)
+                        },
+                    );
+                    self.cursor.focused_item = Some(navigable[target].id);
+                }
+            }
             ViewerCommand::SetSearch(search) => self.search = search,
             ViewerCommand::AddDisplayedSignals(signal_ids) => {
                 let mut existing = self
@@ -450,6 +472,7 @@ pub enum ViewerCommand {
     UpdateMeasurement(u64),
     EndMeasurement,
     SetFocusedItem(DisplayedItemId),
+    FocusDisplayedRelative(isize),
     SetSearch(String),
     AddDisplayedSignals(Vec<SignalId>),
     SetDisplayedOrder(Vec<DisplayedItemId>),
@@ -777,6 +800,18 @@ mod tests {
         assert_eq!(state.displayed_items().len(), 2);
         state.apply(ViewerCommand::RedoDisplayChange);
         assert_eq!(state.displayed_items().len(), 1);
+    }
+
+    #[test]
+    fn relative_focus_commands_clamp_to_displayed_signals() {
+        let mut state = state_with_signals(3);
+        let first = state.displayed_items()[0].id();
+        let last = state.displayed_items()[2].id();
+
+        state.apply(ViewerCommand::FocusDisplayedRelative(20));
+        assert_eq!(state.cursor_state().focused_item(), Some(last));
+        state.apply(ViewerCommand::FocusDisplayedRelative(-20));
+        assert_eq!(state.cursor_state().focused_item(), Some(first));
     }
 
     #[test]

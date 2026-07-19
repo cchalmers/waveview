@@ -3,12 +3,14 @@ use std::rc::Rc;
 
 use molt::{ContextID, Interp, MoltResult, Value};
 use waveview_model::ui_types::{PromptOutput, PromptOutputKind};
+use waveview_model::viewer::ViewerCommand;
 
 const MAX_OUTPUT_ENTRIES: usize = 2_000;
 
 pub struct PromptRuntime {
     interp: Interp,
     puts_output: Rc<RefCell<Vec<PromptOutput>>>,
+    viewer_commands: Rc<RefCell<Vec<ViewerCommand>>>,
     input: String,
     output: Vec<PromptOutput>,
     open: bool,
@@ -19,12 +21,22 @@ impl Default for PromptRuntime {
     fn default() -> Self {
         let puts_output = Rc::new(RefCell::new(Vec::new()));
         let mut interp = Interp::new();
+        interp.add_command("help", command_help);
         let puts_context = interp.save_context(puts_output.clone());
         interp.add_context_command("puts", capture_puts, puts_context);
+        let viewer_commands = Rc::new(RefCell::new(Vec::new()));
+        let viewer_context = interp.save_context(viewer_commands.clone());
+        interp.add_context_command("zoom", command_zoom, viewer_context);
+        interp.add_context_command("cursor", command_cursor, viewer_context);
+        interp.add_context_command("signal", command_signal, viewer_context);
+        interp.add_context_command("search", command_search, viewer_context);
+        interp.add_context_command("undo", command_undo, viewer_context);
+        interp.add_context_command("redo", command_redo, viewer_context);
 
         Self {
             interp,
             puts_output,
+            viewer_commands,
             input: String::new(),
             output: vec![PromptOutput::new(
                 "Molt command console",
@@ -34,6 +46,19 @@ impl Default for PromptRuntime {
             focus_requested: false,
         }
     }
+}
+
+fn command_help(_interp: &mut Interp, _id: ContextID, argv: &[Value]) -> MoltResult {
+    molt::check_args(1, argv, 1, 1, "")?;
+    molt::molt_ok!(
+        "Waveview commands:\n\
+         zoom fit\n\
+         cursor set <ticks> | cursor clear\n\
+         signal focus next|previous ?count?\n\
+         search <regex>\n\
+         undo | redo\n\
+         Standard Tcl commands are also available."
+    )
 }
 
 impl PromptRuntime {
@@ -71,12 +96,13 @@ impl PromptRuntime {
         &self.output
     }
 
-    pub fn submit(&mut self) {
+    pub fn submit(&mut self) -> Vec<ViewerCommand> {
         let script = self.input.trim().to_owned();
         if script.is_empty() {
-            return;
+            return Vec::new();
         }
 
+        self.viewer_commands.borrow_mut().clear();
         self.output.push(PromptOutput::new(
             format!(": {script}"),
             PromptOutputKind::Command,
@@ -97,6 +123,7 @@ impl PromptRuntime {
         self.input.clear();
         self.trim_output();
         self.focus_requested = true;
+        self.viewer_commands.borrow_mut().drain(..).collect()
     }
 
     fn flush_puts(&mut self) {
@@ -109,6 +136,94 @@ impl PromptRuntime {
             self.output.drain(..excess);
         }
     }
+}
+
+fn command_zoom(interp: &mut Interp, id: ContextID, argv: &[Value]) -> MoltResult {
+    molt::check_args(1, argv, 2, 2, "fit")?;
+    match argv[1].as_str() {
+        "fit" => push_viewer_command(interp, id, ViewerCommand::FitTime),
+        subcommand => molt::molt_err!("unknown zoom subcommand \"{}\": expected fit", subcommand),
+    }
+}
+
+fn command_cursor(interp: &mut Interp, id: ContextID, argv: &[Value]) -> MoltResult {
+    molt::check_args(1, argv, 2, 3, "set time|clear")?;
+    match argv[1].as_str() {
+        "set" => {
+            molt::check_args(2, argv, 3, 3, "time")?;
+            let time = argv[2]
+                .as_str()
+                .parse::<u64>()
+                .map_err(|_| molt::Exception::molt_err("cursor time must be an integer".into()))?;
+            let commands: &mut Rc<RefCell<Vec<ViewerCommand>>> = interp.context(id);
+            commands.borrow_mut().extend([
+                ViewerCommand::SetCursor(time),
+                ViewerCommand::RevealTime(time),
+            ]);
+            molt::molt_ok!()
+        }
+        "clear" => {
+            molt::check_args(2, argv, 2, 2, "")?;
+            push_viewer_command(interp, id, ViewerCommand::ClearCursor)
+        }
+        subcommand => molt::molt_err!(
+            "unknown cursor subcommand \"{}\": expected set or clear",
+            subcommand
+        ),
+    }
+}
+
+fn command_signal(interp: &mut Interp, id: ContextID, argv: &[Value]) -> MoltResult {
+    molt::check_args(1, argv, 3, 4, "focus next|previous ?count?")?;
+    if argv[1].as_str() != "focus" {
+        return molt::molt_err!("unknown signal subcommand \"{}\": expected focus", argv[1]);
+    }
+    let direction = match argv[2].as_str() {
+        "next" => 1_isize,
+        "previous" | "prev" => -1_isize,
+        direction => {
+            return molt::molt_err!(
+                "unknown focus direction \"{}\": expected next or previous",
+                direction
+            );
+        }
+    };
+    let count = if let Some(value) = argv.get(3) {
+        value
+            .as_str()
+            .parse::<isize>()
+            .ok()
+            .filter(|count| *count > 0)
+            .ok_or_else(|| molt::Exception::molt_err("count must be a positive integer".into()))?
+    } else {
+        1
+    };
+    push_viewer_command(
+        interp,
+        id,
+        ViewerCommand::FocusDisplayedRelative(direction.saturating_mul(count)),
+    )
+}
+
+fn command_search(interp: &mut Interp, id: ContextID, argv: &[Value]) -> MoltResult {
+    molt::check_args(1, argv, 2, 2, "pattern")?;
+    push_viewer_command(interp, id, ViewerCommand::SetSearch(argv[1].to_string()))
+}
+
+fn command_undo(interp: &mut Interp, id: ContextID, argv: &[Value]) -> MoltResult {
+    molt::check_args(1, argv, 1, 1, "")?;
+    push_viewer_command(interp, id, ViewerCommand::UndoDisplayChange)
+}
+
+fn command_redo(interp: &mut Interp, id: ContextID, argv: &[Value]) -> MoltResult {
+    molt::check_args(1, argv, 1, 1, "")?;
+    push_viewer_command(interp, id, ViewerCommand::RedoDisplayChange)
+}
+
+fn push_viewer_command(interp: &mut Interp, id: ContextID, command: ViewerCommand) -> MoltResult {
+    let commands: &mut Rc<RefCell<Vec<ViewerCommand>>> = interp.context(id);
+    commands.borrow_mut().push(command);
+    molt::molt_ok!()
 }
 
 fn capture_puts(interp: &mut Interp, id: ContextID, argv: &[Value]) -> MoltResult {
@@ -129,16 +244,47 @@ mod tests {
     fn interpreter_persists_values_and_captures_puts_and_errors() {
         let mut prompt = PromptRuntime::default();
         prompt.set_input("set answer 42".to_owned());
-        prompt.submit();
+        assert!(prompt.submit().is_empty());
         prompt.set_input("puts $answer".to_owned());
-        prompt.submit();
+        assert!(prompt.submit().is_empty());
         prompt.set_input("error broken".to_owned());
-        prompt.submit();
+        assert!(prompt.submit().is_empty());
 
         assert!(prompt.output().iter().any(|entry| entry.text == "42"));
         assert!(prompt
             .output()
             .iter()
             .any(|entry| entry.kind == PromptOutputKind::Error && entry.text == "broken"));
+    }
+
+    #[test]
+    fn viewer_commands_are_queued_without_borrowing_viewer_state() {
+        let mut prompt = PromptRuntime::default();
+        prompt.set_input(
+            "zoom fit; cursor set 42; signal focus previous 2; search {clock.*}; undo".to_owned(),
+        );
+
+        assert_eq!(
+            prompt.submit(),
+            vec![
+                ViewerCommand::FitTime,
+                ViewerCommand::SetCursor(42),
+                ViewerCommand::RevealTime(42),
+                ViewerCommand::FocusDisplayedRelative(-2),
+                ViewerCommand::SetSearch("clock.*".to_owned()),
+                ViewerCommand::UndoDisplayChange,
+            ]
+        );
+    }
+
+    #[test]
+    fn help_lists_the_waveview_command_vocabulary() {
+        let mut prompt = PromptRuntime::default();
+        prompt.set_input("help".to_owned());
+        assert!(prompt.submit().is_empty());
+        assert!(prompt
+            .output()
+            .iter()
+            .any(|entry| entry.text.contains("signal focus next|previous")));
     }
 }

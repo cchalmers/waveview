@@ -16,7 +16,7 @@ pub fn render_header(ui: &mut egui::Ui) {
 }
 
 pub fn render_output(ui: &mut egui::Ui, output: &[PromptOutput]) {
-    for entry in output.iter().rev() {
+    for entry in output {
         eprompt::render_output_entry(ui, &OutputEntry::new(&entry.text, output_kind(entry.kind)));
     }
 }

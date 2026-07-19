@@ -4,7 +4,7 @@ use eframe::egui;
 use eframe::egui::NumExt;
 use egui::*;
 use waveview_model::search::{SearchHistory, SearchMatcher};
-use waveview_model::ui_types::MenuAction;
+use waveview_model::ui_types::{MenuAction, PromptOutput};
 use waveview_model::viewer::{
     DisplayedItem, EffectRequest, FocusPlacement, ViewerCommand, ViewerState,
 };
@@ -434,7 +434,7 @@ impl eframe::App for TemplateApp {
         let prompt_has_focus = ctx.memory(|memory| memory.has_focus(command_prompt_id()));
         let keyboard_captured = search_has_focus
             || browser_search_has_focus
-            || prompt.is_open()
+            || prompt_has_focus
             || url_window.open
             || err_window.open
             || live.open
@@ -446,6 +446,8 @@ impl eframe::App for TemplateApp {
         let mut keyboard_focus_placement = None;
         let mut keyboard_select_visible = None;
         let mut force_vertical_scroll = false;
+        let mut prompt_history_moved = false;
+        let mut prompt_scroll_to_bottom = false;
         for input in search_inputs {
             match input {
                 SearchInput::Previous => {
@@ -479,16 +481,22 @@ impl eframe::App for TemplateApp {
                 SearchInput::Previous => {
                     if let Some(command) = command_history.previous(prompt.input()) {
                         prompt.set_input(command);
+                        prompt_history_moved = true;
                     }
                 }
                 SearchInput::Next => {
                     if let Some(command) = command_history.newer() {
                         prompt.set_input(command);
+                        prompt_history_moved = true;
                     }
                 }
                 SearchInput::Accept => {
+                    let submitted = !prompt.input().trim().is_empty();
                     command_history.accept(prompt.input());
-                    prompt.submit();
+                    for command in prompt.submit() {
+                        viewer.apply(command);
+                    }
+                    prompt_scroll_to_bottom = submitted;
                 }
             }
         }
@@ -794,31 +802,77 @@ impl eframe::App for TemplateApp {
                 .show(root_ui, |ui| {
                     wave_dispatch::render_prompt_header(ui);
                     ui.separator();
-                    ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
-                        ui.horizontal(|ui| {
-                            wave_dispatch::render_prompt_prefix(ui);
-                            let response = ui.add(
-                                egui::TextEdit::singleline(prompt.input_mut())
-                                    .id(command_prompt_id())
-                                    .font(egui::TextStyle::Monospace)
-                                    .frame(egui::Frame::NONE)
-                                    .desired_width(f32::INFINITY),
-                            );
-                            if prompt.take_focus_request() {
-                                response.request_focus();
+                    let body_rect = ui.available_rect_before_wrap();
+                    let input_height = ui.spacing().interact_size.y;
+                    let separator_gap = ui.spacing().item_spacing.y;
+                    let input_rect = egui::Rect::from_min_max(
+                        egui::pos2(body_rect.left(), body_rect.bottom() - input_height),
+                        body_rect.right_bottom(),
+                    );
+                    let transcript_rect = egui::Rect::from_min_max(
+                        body_rect.left_top(),
+                        egui::pos2(body_rect.right(), input_rect.top() - separator_gap),
+                    );
+
+                    let mut transcript_ui = ui.new_child(
+                        egui::UiBuilder::new()
+                            .id_salt("command_prompt_transcript")
+                            .max_rect(transcript_rect)
+                            .layout(egui::Layout::top_down(egui::Align::Min)),
+                    );
+                    transcript_ui.set_clip_rect(transcript_rect);
+                    transcript_ui.set_min_size(transcript_rect.size());
+                    egui::ScrollArea::vertical()
+                        .id_salt("command_prompt_output")
+                        .stick_to_bottom(true)
+                        .auto_shrink([false, false])
+                        .show(&mut transcript_ui, |ui| {
+                            let output_height =
+                                prompt_output_height(ui, prompt.output(), transcript_rect.width());
+                            ui.add_space((transcript_rect.height() - output_height).max(0.0));
+                            wave_dispatch::render_prompt_output(ui, prompt.output());
+                            if prompt_scroll_to_bottom {
+                                ui.scroll_to_cursor(Some(egui::Align::BOTTOM));
                             }
                         });
-                        ui.separator();
-                        egui::ScrollArea::vertical()
-                            .id_salt("command_prompt_output")
-                            .stick_to_bottom(true)
-                            .auto_shrink([false, false])
-                            .show(ui, |ui| {
-                                ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
-                                    wave_dispatch::render_prompt_output(ui, prompt.output());
-                                });
-                            });
+
+                    let separator_y = input_rect.top() - separator_gap * 0.5;
+                    ui.painter().hline(
+                        body_rect.x_range(),
+                        separator_y,
+                        ui.visuals().widgets.noninteractive.bg_stroke,
+                    );
+
+                    let mut input_ui = ui.new_child(
+                        egui::UiBuilder::new()
+                            .id_salt("command_prompt_input")
+                            .max_rect(input_rect)
+                            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+                    );
+                    input_ui.set_clip_rect(input_rect);
+                    input_ui.set_min_size(input_rect.size());
+                    input_ui.horizontal(|ui| {
+                        wave_dispatch::render_prompt_prefix(ui);
+                        let cursor_end = prompt.input().chars().count();
+                        let mut output = egui::TextEdit::singleline(prompt.input_mut())
+                            .id(command_prompt_id())
+                            .font(egui::TextStyle::Monospace)
+                            .frame(egui::Frame::NONE)
+                            .desired_width(f32::INFINITY)
+                            .show(ui);
+                        let response = output.response;
+                        if prompt_history_moved {
+                            output.state.cursor.set_char_range(Some(
+                                egui::text::CCursorRange::one(egui::text::CCursor::new(cursor_end)),
+                            ));
+                            output.state.store(ui.ctx(), command_prompt_id());
+                        }
+                        if prompt.take_focus_request() {
+                            response.request_focus();
+                        }
                     });
+
+                    ui.allocate_rect(body_rect, egui::Sense::hover());
                 });
         }
 
@@ -1252,6 +1306,12 @@ fn take_search_inputs(ctx: &egui::Context, search_has_focus: bool) -> Vec<Search
                     pressed: true,
                     ..
                 } => Some(SearchInput::Accept),
+                egui::Event::Key {
+                    key: egui::Key::J,
+                    pressed: true,
+                    modifiers,
+                    ..
+                } if modifiers.ctrl => Some(SearchInput::Accept),
                 _ => None,
             };
             if let Some(search_input) = search_input {
@@ -1300,6 +1360,20 @@ fn signal_browser_search_id() -> egui::Id {
 
 fn command_prompt_id() -> egui::Id {
     egui::Id::new("command_prompt_input")
+}
+
+fn prompt_output_height(ui: &egui::Ui, output: &[PromptOutput], width: f32) -> f32 {
+    let text_height = output
+        .iter()
+        .map(|entry| {
+            egui::WidgetText::from(egui::RichText::new(&entry.text).monospace())
+                .into_galley(ui, None, width, egui::TextStyle::Body)
+                .size()
+                .y
+        })
+        .sum::<f32>();
+    let gaps = output.len().saturating_sub(1) as f32 * ui.spacing().item_spacing.y;
+    text_height + gaps
 }
 
 fn ctrl_key_character(key: egui::Key) -> Option<char> {
