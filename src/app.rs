@@ -4,6 +4,7 @@ use eframe::egui;
 use eframe::egui::NumExt;
 use egui::*;
 use waveview_model::viewer::{DisplayedItem, EffectRequest, ViewerCommand, ViewerState};
+use waveview_model::vim::{VimInput, VimState, NORMAL_BINDINGS};
 use waveview_model::waveform::Waveform;
 
 use std::sync::atomic::AtomicBool;
@@ -35,6 +36,10 @@ pub struct TemplateApp {
     row_height: f32,
     side_panel: SidePanel,
     info: Info,
+    #[serde(skip)]
+    vim: VimState,
+    #[serde(skip)]
+    show_key_help: bool,
 }
 
 impl Default for TemplateApp {
@@ -70,6 +75,8 @@ impl Default for TemplateApp {
                 viewport: Rect::NOTHING,
                 pixels_per_tick: 0.0,
             },
+            vim: VimState::default(),
+            show_key_help: false,
         }
     }
 }
@@ -167,6 +174,8 @@ impl TemplateApp {
 
             side_panel: if cfg!(debug_assertions) { SidePanel::Samples } else { SidePanel::None },
             info: Info { rect: Rect::NOTHING, min_rect: Rect::NOTHING, max_rect: Rect::NOTHING, viewport: Rect::NOTHING, pixels_per_tick: 0.0 },
+            vim: VimState::default(),
+            show_key_help: false,
         }
     }
 }
@@ -294,6 +303,8 @@ impl eframe::App for TemplateApp {
             row_height,
             side_panel,
             info,
+            vim,
+            show_key_help,
         } = self;
 
         {
@@ -364,6 +375,79 @@ impl eframe::App for TemplateApp {
                     }
                     *a_future = None;
                     *open_file_ctx = None;
+                }
+            }
+        }
+
+        let search_has_focus = ctx.memory(|memory| memory.has_focus(signal_search_id()));
+        let keyboard_captured =
+            search_has_focus || url_window.open || err_window.open || live.open || *show_key_help;
+        let search_inputs = take_search_inputs(&ctx, search_has_focus);
+        let mut reveal_keyboard_focus = false;
+        let mut keyboard_half_page_scroll = 0_isize;
+        let mut force_vertical_scroll = false;
+        for input in search_inputs {
+            match input {
+                SearchInput::Previous => {
+                    if let Some(query) = vim.search_history_previous(viewer.search()) {
+                        viewer.apply(ViewerCommand::SetSearch(query));
+                    }
+                }
+                SearchInput::Next => {
+                    if let Some(query) = vim.search_history_next() {
+                        viewer.apply(ViewerCommand::SetSearch(query));
+                    }
+                }
+                SearchInput::Accept => {
+                    vim.accept_search(viewer.search());
+                    if let Some(focused) = ctx.memory(|memory| memory.focused()) {
+                        ctx.memory_mut(|memory| memory.surrender_focus(focused));
+                    }
+                }
+            }
+        }
+        for input in take_vim_inputs(&ctx, keyboard_captured) {
+            if input == VimInput::Escape {
+                if *show_key_help {
+                    *show_key_help = false;
+                } else if url_window.open {
+                    url_window.open = false;
+                } else if err_window.open {
+                    err_window.open = false;
+                } else if live.open {
+                    live.open = false;
+                } else if search_has_focus {
+                    viewer.apply(ViewerCommand::SetSearch(String::new()));
+                }
+                if let Some(focused) = ctx.memory(|memory| memory.focused()) {
+                    ctx.memory_mut(|memory| memory.surrender_focus(focused));
+                }
+            }
+            for command in vim.handle(input, keyboard_captured, viewer) {
+                reveal_keyboard_focus |= matches!(
+                    command,
+                    ViewerCommand::SetFocusedItem(_)
+                        | ViewerCommand::MoveDisplayedItem { .. }
+                        | ViewerCommand::RemoveDisplayedItem(_)
+                );
+                for effect in viewer.apply(command) {
+                    match effect {
+                        EffectRequest::ScrollDisplayedRows(rows) => {
+                            let row_span = *row_height + root_ui.spacing().item_spacing.y;
+                            *y_offset = (*y_offset + rows as f32 * row_span).max(0.0);
+                            force_vertical_scroll = true;
+                        }
+                        EffectRequest::ScrollDisplayedHalfPages(half_pages) => {
+                            keyboard_half_page_scroll += half_pages;
+                            force_vertical_scroll = true;
+                        }
+                        EffectRequest::FocusSearch => {
+                            ctx.memory_mut(|memory| memory.request_focus(signal_search_id()));
+                        }
+                        EffectRequest::OpenFile
+                        | EffectRequest::OpenUrl(_)
+                        | EffectRequest::ConnectLive(_) => {}
+                    }
                 }
             }
         }
@@ -489,8 +573,31 @@ impl eframe::App for TemplateApp {
 
                     // ui.button("
                 });
+                ui.menu_button("Help", |ui| {
+                    if ui.button("Keyboard shortcuts").clicked() {
+                        *show_key_help = true;
+                        ui.close();
+                    }
+                });
             });
         });
+
+        egui::Window::new("Keyboard shortcuts")
+            .open(show_key_help)
+            .resizable(true)
+            .show(&ctx, |ui| {
+                egui::Grid::new("vim_key_help")
+                    .num_columns(2)
+                    .spacing(egui::vec2(24.0, 6.0))
+                    .striped(true)
+                    .show(ui, |ui| {
+                        for binding in NORMAL_BINDINGS {
+                            ui.monospace(binding.keys);
+                            ui.label(binding.description);
+                            ui.end_row();
+                        }
+                    });
+            });
 
         // if *show_info {
         //     egui::SidePanel::right("inspection_panel").show(ctx, |ui| {
@@ -534,8 +641,48 @@ impl eframe::App for TemplateApp {
             .collect();
         let mut displayed_items = viewer.displayed_items().to_vec();
         let mut requested_focus = None;
-        let focused_item = viewer.cursor_state().focused_item();
         let timeline_height = wave_dispatch::timeline_height();
+
+        egui::Panel::bottom("vim_status").show(root_ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.monospace(vim.mode().label());
+                let pending = vim.pending_display();
+                if !pending.is_empty() {
+                    ui.separator();
+                    ui.monospace(pending);
+                }
+            });
+        });
+
+        if keyboard_half_page_scroll != 0 {
+            let row_span = *row_height + root_ui.spacing().item_spacing.y;
+            let visible_ids = viewer
+                .displayed_items()
+                .iter()
+                .filter(|item| {
+                    item.signal_id()
+                        .and_then(|id| viewer.waveform().signal(id))
+                        .is_some_and(|signal| signal.name().contains(viewer.search()))
+                })
+                .map(DisplayedItem::id)
+                .collect::<Vec<_>>();
+            if let Some(current) = viewer
+                .cursor_state()
+                .focused_item()
+                .and_then(|focused| visible_ids.iter().position(|id| *id == focused))
+            {
+                let list_height = (root_ui.available_height() - timeline_height).max(row_span);
+                let half_page_rows = (list_height / row_span / 2.0).floor().max(1.0) as isize;
+                let row_delta = keyboard_half_page_scroll.saturating_mul(half_page_rows);
+                let target = current
+                    .saturating_add_signed(row_delta)
+                    .min(visible_ids.len().saturating_sub(1));
+                viewer.apply(ViewerCommand::SetFocusedItem(visible_ids[target]));
+                *y_offset = (*y_offset + row_delta as f32 * row_span).max(0.0);
+                reveal_keyboard_focus = true;
+            }
+        }
+        let focused_item = viewer.cursor_state().focused_item();
 
         egui::Panel::left("side_panel")
             .default_size(180.0)
@@ -555,7 +702,7 @@ impl eframe::App for TemplateApp {
                         .layout(egui::Layout::left_to_right(egui::Align::Center)),
                     |ui| {
                         ui.label("🔎");
-                        ui.text_edit_singleline(&mut search_text);
+                        ui.add(egui::TextEdit::singleline(&mut search_text).id(signal_search_id()));
                     },
                 );
                 let rows_top = ui.next_widget_position().y;
@@ -692,6 +839,7 @@ impl eframe::App for TemplateApp {
             });
 
         if search_text != viewer.search() {
+            vim.search_edited();
             viewer.apply(ViewerCommand::SetSearch(search_text));
         }
         let new_order: Vec<_> = displayed_items.iter().map(DisplayedItem::id).collect();
@@ -721,7 +869,8 @@ impl eframe::App for TemplateApp {
             let min_rect = ui.min_rect();
             let max_rect = ui.max_rect();
 
-            let scroll_area = egui::ScrollArea::vertical().auto_shrink([false; 2]);
+            let spacing = ui.spacing().item_spacing;
+            let row_height_with_spacing = *row_height + spacing.y;
 
             let filtered = viewer
                 .displayed_items()
@@ -735,10 +884,38 @@ impl eframe::App for TemplateApp {
                 .collect::<Vec<_>>();
 
             let num_rows = filtered.len();
+            if reveal_keyboard_focus {
+                let focused_index = viewer.cursor_state().focused_item().and_then(|focused| {
+                    viewer
+                        .displayed_items()
+                        .iter()
+                        .filter(|item| {
+                            item.signal_id()
+                                .and_then(|id| viewer.waveform().signal(id))
+                                .is_some_and(|signal| signal.name().contains(viewer.search()))
+                        })
+                        .position(|item| item.id() == focused)
+                });
+                if let Some(index) = focused_index {
+                    let row_top = index as f32 * row_height_with_spacing;
+                    let row_bottom = row_top + *row_height;
+                    let visible_height = ui.available_height().max(*row_height);
+                    if row_top < *y_offset {
+                        *y_offset = row_top;
+                    } else if row_bottom > *y_offset + visible_height {
+                        *y_offset = row_bottom - visible_height;
+                    }
+                }
+            }
 
-            // let row_height_sans_spacing = 32.0;
-            let spacing = ui.spacing().item_spacing;
-            let row_height_with_spacing = *row_height + spacing.y;
+            let content_height = (row_height_with_spacing * num_rows as f32 - spacing.y).max(0.0);
+            let max_offset = (content_height - ui.available_height()).max(0.0);
+            *y_offset = (*y_offset).clamp(0.0, max_offset);
+
+            let mut scroll_area = egui::ScrollArea::vertical().auto_shrink([false; 2]);
+            if force_vertical_scroll || reveal_keyboard_focus {
+                scroll_area = scroll_area.vertical_scroll_offset(*y_offset);
+            }
 
             scroll_area.show_viewport(ui, |ui, viewport| {
                 // this is kinda nasty because you end up with a 1 frame lag between the waves and
@@ -963,6 +1140,121 @@ fn mk_waveform(sigs: Vec<(vcd::ScopedVar, vcd::Signal)>, end_time: u64) -> Wavef
         })
         .collect();
     Waveform::new(signals, end_time)
+}
+
+fn take_vim_inputs(ctx: &egui::Context, keyboard_captured: bool) -> Vec<VimInput> {
+    ctx.input_mut(|input| {
+        let modifiers = input.modifiers;
+        let mut vim_inputs = Vec::new();
+        input.events.retain(|event| {
+            let Some(vim_input) = vim_input_for_event(event, modifiers) else {
+                return true;
+            };
+            if keyboard_captured && vim_input != VimInput::Escape {
+                return true;
+            }
+            vim_inputs.push(vim_input);
+            false
+        });
+        vim_inputs
+    })
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SearchInput {
+    Previous,
+    Next,
+    Accept,
+}
+
+fn take_search_inputs(ctx: &egui::Context, search_has_focus: bool) -> Vec<SearchInput> {
+    if !search_has_focus {
+        return Vec::new();
+    }
+    ctx.input_mut(|input| {
+        let mut search_inputs = Vec::new();
+        input.events.retain(|event| {
+            let search_input = match event {
+                egui::Event::Key {
+                    key: egui::Key::ArrowUp,
+                    pressed: true,
+                    ..
+                } => Some(SearchInput::Previous),
+                egui::Event::Key {
+                    key: egui::Key::ArrowDown,
+                    pressed: true,
+                    ..
+                } => Some(SearchInput::Next),
+                egui::Event::Key {
+                    key: egui::Key::P,
+                    pressed: true,
+                    modifiers,
+                    ..
+                } if modifiers.ctrl => Some(SearchInput::Previous),
+                egui::Event::Key {
+                    key: egui::Key::N,
+                    pressed: true,
+                    modifiers,
+                    ..
+                } if modifiers.ctrl => Some(SearchInput::Next),
+                egui::Event::Key {
+                    key: egui::Key::Enter,
+                    pressed: true,
+                    ..
+                } => Some(SearchInput::Accept),
+                _ => None,
+            };
+            if let Some(search_input) = search_input {
+                search_inputs.push(search_input);
+                false
+            } else {
+                true
+            }
+        });
+        search_inputs
+    })
+}
+
+fn vim_input_for_event(event: &egui::Event, modifiers: egui::Modifiers) -> Option<VimInput> {
+    match event {
+        egui::Event::Text(text) if !modifiers.ctrl && !modifiers.command => {
+            let mut characters = text.chars();
+            let character = characters.next()?;
+            characters
+                .next()
+                .is_none()
+                .then_some(VimInput::Char(character))
+        }
+        egui::Event::Key {
+            key: egui::Key::Escape,
+            pressed: true,
+            ..
+        } => Some(VimInput::Escape),
+        egui::Event::Key {
+            key,
+            pressed: true,
+            modifiers,
+            ..
+        } if modifiers.ctrl => ctrl_key_character(*key).map(VimInput::Ctrl),
+        _ => None,
+    }
+}
+
+fn signal_search_id() -> egui::Id {
+    egui::Id::new("signal_search")
+}
+
+fn ctrl_key_character(key: egui::Key) -> Option<char> {
+    match key {
+        egui::Key::B => Some('b'),
+        egui::Key::D => Some('d'),
+        egui::Key::E => Some('e'),
+        egui::Key::F => Some('f'),
+        egui::Key::R => Some('r'),
+        egui::Key::U => Some('u'),
+        egui::Key::Y => Some('y'),
+        _ => None,
+    }
 }
 
 impl TemplateApp {

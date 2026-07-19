@@ -32,10 +32,12 @@ focus to Normal mode.
 
 - `j`, `k`: next/previous displayed item; counts apply.
 - `gg`, `G`: first/last displayed item.
-- `h`, `l`: previous/next transition of the focused signal.
+- `h`, `l`: move the time cursor left/right by a viewport-relative step.
+- `b`, `w`: previous/next transition of the focused signal.
 - `0`, `$`: start/end of the waveform.
 - `Ctrl-F`, `Ctrl-B`: move one time viewport forward/backward.
-- `Ctrl-D`, `Ctrl-U`: move half a viewport forward/backward.
+- `Ctrl-D`, `Ctrl-U`: scroll the signal list down/up by half a page.
+- `Ctrl-E`, `Ctrl-Y`: scroll the signal list down/up by one row.
 - `zt`, `zz`, `zb`: reveal focused item at top/center/bottom.
 - `zi`, `zo`, `zf`: zoom in/out/fit.
 - `/`, `?`, `n`, `N`, `*`: search forward/backward, repeat, and search focused name.
@@ -51,11 +53,12 @@ viewers. Key behavior must be documented by executable table-driven tests.
 
 ## Focus and routing
 
-- [ ] Do not run Normal-mode commands while an egui text edit owns keyboard focus.
-- [ ] Give dialogs and the prompt an explicit capture layer.
-- [ ] Return to the canvas/list focus predictably on close or `Esc`.
-- [ ] Display the current mode, pending count/operator, and partial key sequence unobtrusively.
-- [ ] Generate the keyboard help window from the same binding table used for dispatch.
+- [x] Do not run Normal-mode commands while an egui text edit owns keyboard focus.
+- [ ] Give dialogs and the prompt an explicit capture layer. Dialogs are captured; the prompt is
+  introduced in Stage 6.
+- [x] Return to the canvas/list focus predictably on close or `Esc`.
+- [x] Display the current mode, pending count/operator, and partial key sequence unobtrusively.
+- [x] Generate the keyboard help window from the same binding table used for dispatch.
 
 ## Mouse and menu policy
 
@@ -70,3 +73,11 @@ features do not require mouse/menu parity before shipping.
 - A waveform can be navigated, zoomed, searched, rearranged, and reduced to desired signals without
   using the mouse.
 - Help and status always describe the actual active keymap.
+
+## Current progress
+
+- The egui-independent Normal-mode interpreter handles counts and partial commands and emits only
+  `ViewerCommand`s.
+- Row focus, transition movement, capture bounds, viewport paging, zoom/fit, remove/reorder,
+  undo/redo, and repeat are wired to the application.
+- Visual modes, search commands, vertical placement commands, yank, and jump history remain.
