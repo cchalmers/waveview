@@ -37,13 +37,19 @@ edit:
 | Workspace `Cargo.toml`, `Cargo.lock`, or `flake.nix` | Restart required |
 | Documentation, plans, VCD fixtures, and unrelated workspace crates | No effect on the running viewer |
 
-In practical terms, waveform/timeline painting, the layout and styling inside those components,
-Vim command interpretation, signal-name/search painting, mode status, and keyboard help can be
-changed without losing the loaded capture or viewer state. `eprompt` is rebuilt into the same
-library, although Waveview does not use it yet. Application/panel orchestration, file loading,
-shared model/search/waveform types and behavior, Vim state fields, and exported dynamic-library
-signatures need a restart. `vim_types.rs` is intentionally separate from `vim.rs` so that this
-distinction is unambiguous.
+In practical terms, waveform/timeline painting, the activity icons, available-signal browser
+header/tree, signal-name/search painting, Vim command interpretation, mode status, and keyboard
+help can be changed without losing the loaded capture or viewer state. `eprompt` is rebuilt into
+the same library, although Waveview does not use it yet. Application/panel orchestration, stateful
+egui containers (`TextEdit`, `ScrollArea`, drag-and-drop), file loading, shared
+model/search/waveform types and behavior, Vim state fields, and exported dynamic-library signatures
+need a restart. `vim_types.rs` is intentionally separate from `vim.rs` so that this distinction is
+unambiguous.
+
+The host deliberately owns stateful egui containers, then passes their inner `Ui` plus borrowed
+application state to reloadable render functions. This keeps egui state created by one dylib from
+surviving after that dylib is unloaded while allowing most visible contents and interactions to
+reload.
 
 A failed hot build leaves the previous UI active and shows a nonfatal failure message; compiler
 diagnostics remain in the terminal. Editing a restart-only file shows a persistent yellow `restart

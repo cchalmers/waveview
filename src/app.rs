@@ -8,7 +8,7 @@ use waveview_model::viewer::{
     DisplayedItem, EffectRequest, FocusPlacement, ViewerCommand, ViewerState,
 };
 use waveview_model::vim::{VimInput, VimState};
-use waveview_model::waveform::{ScopeNode, SignalHierarchy, Waveform};
+use waveview_model::waveform::Waveform;
 
 use std::collections::HashSet;
 use std::sync::atomic::AtomicBool;
@@ -717,7 +717,7 @@ impl eframe::App for TemplateApp {
             .resizable(false)
             .show(root_ui, |ui| {
                 let signals_selected = *selected_activity == Some(Activity::Signals);
-                if signal_activity_button(ui, signals_selected) {
+                if wave_dispatch::render_signal_activity_button(ui, signals_selected) {
                     *selected_activity = if signals_selected {
                         None
                     } else {
@@ -744,34 +744,24 @@ impl eframe::App for TemplateApp {
                 .max_size(500.0)
                 .resizable(true)
                 .show(root_ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.strong("Available signals");
-                        if ui
-                            .add_enabled(!all_signals_displayed, egui::Button::new("Add all"))
-                            .clicked()
-                        {
-                            signals_to_add.extend(
-                                viewer.waveform().signals().iter().map(|signal| signal.id()),
-                            );
-                        }
-                    });
+                    if wave_dispatch::render_signal_browser_header(ui, all_signals_displayed) {
+                        signals_to_add
+                            .extend(viewer.waveform().signals().iter().map(|signal| signal.id()));
+                    }
                     ui.add(
                         egui::TextEdit::singleline(signal_browser_search)
                             .hint_text("regex search")
                             .id(signal_browser_search_id()),
                     );
                     ui.separator();
-                    let matcher = SearchMatcher::new(signal_browser_search);
                     egui::ScrollArea::vertical()
                         .id_salt("available_signal_tree")
                         .auto_shrink([false, false])
                         .show(ui, |ui| {
-                            render_signal_hierarchy(
+                            wave_dispatch::render_signal_browser_tree(
                                 ui,
                                 viewer.waveform(),
-                                viewer.waveform().hierarchy(),
                                 signal_browser_search,
-                                matcher.as_ref(),
                                 expanded_signal_scopes,
                                 &displayed_signal_ids,
                                 &mut signals_to_add,
@@ -1266,217 +1256,6 @@ impl eframe::App for TemplateApp {
 
 fn mk_waveform(sigs: Vec<(vcd::ScopedVar, vcd::Signal)>, end_time: u64) -> Waveform {
     Waveform::from_vcd(sigs, end_time)
-}
-
-fn signal_activity_button(ui: &mut egui::Ui, selected: bool) -> bool {
-    let (rect, response) =
-        ui.allocate_exact_size(egui::vec2(ui.available_width(), 34.0), egui::Sense::click());
-    let visuals = ui.style().interact_selectable(&response, selected);
-    ui.painter().rect(
-        rect,
-        visuals.corner_radius,
-        visuals.bg_fill,
-        visuals.bg_stroke,
-        egui::StrokeKind::Inside,
-    );
-
-    let icon = rect.shrink2(egui::vec2(7.0, 9.0));
-    let low = icon.bottom();
-    let high = icon.top();
-    let x0 = icon.left();
-    let x1 = egui::lerp(icon.x_range(), 0.28);
-    let x2 = egui::lerp(icon.x_range(), 0.62);
-    let x3 = icon.right();
-    ui.painter().add(egui::Shape::line(
-        vec![
-            egui::pos2(x0, low),
-            egui::pos2(x1, low),
-            egui::pos2(x1, high),
-            egui::pos2(x2, high),
-            egui::pos2(x2, low),
-            egui::pos2(x3, low),
-        ],
-        visuals.fg_stroke,
-    ));
-
-    response.on_hover_text("Signals").clicked()
-}
-
-#[allow(clippy::too_many_arguments)]
-fn render_signal_hierarchy(
-    ui: &mut egui::Ui,
-    waveform: &Waveform,
-    hierarchy: &SignalHierarchy,
-    query: &str,
-    matcher: Option<&SearchMatcher>,
-    expanded: &mut HashSet<String>,
-    displayed: &HashSet<waveview_model::SignalId>,
-    additions: &mut Vec<waveview_model::SignalId>,
-) {
-    if !query.is_empty() && matcher.is_none() {
-        ui.colored_label(egui::Color32::LIGHT_RED, "Invalid regular expression");
-        return;
-    }
-    for &signal_id in hierarchy.signals() {
-        render_available_signal(
-            ui, waveform, signal_id, matcher, false, displayed, additions,
-        );
-    }
-    for scope in hierarchy.scopes() {
-        render_available_scope(
-            ui,
-            waveform,
-            scope,
-            "",
-            matcher,
-            !query.is_empty(),
-            false,
-            expanded,
-            displayed,
-            additions,
-        );
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn render_available_scope(
-    ui: &mut egui::Ui,
-    waveform: &Waveform,
-    scope: &ScopeNode,
-    parent_path: &str,
-    matcher: Option<&SearchMatcher>,
-    searching: bool,
-    ancestor_matched: bool,
-    expanded: &mut HashSet<String>,
-    displayed: &HashSet<waveview_model::SignalId>,
-    additions: &mut Vec<waveview_model::SignalId>,
-) {
-    let path = if parent_path.is_empty() {
-        scope.metadata().name().to_owned()
-    } else {
-        format!("{parent_path}.{}", scope.metadata().name())
-    };
-    let scope_matched = ancestor_matched
-        || matcher.is_some_and(|matcher| {
-            matcher.is_match(scope.metadata().name()) || matcher.is_match(&path)
-        });
-    if searching && !scope_matched && !scope_contains_match(waveform, scope, matcher) {
-        return;
-    }
-
-    let is_open = searching || expanded.contains(&path);
-    let scope_signal_ids = scope.signal_ids_recursive();
-    let scope_is_displayed = scope_signal_ids
-        .iter()
-        .all(|signal_id| displayed.contains(signal_id));
-    ui.horizontal(|ui| {
-        if ui.small_button(if is_open { "▾" } else { "▸" }).clicked() && !searching {
-            if is_open {
-                expanded.remove(&path);
-            } else {
-                expanded.insert(path.clone());
-            }
-        }
-        ui.label(scope.metadata().name())
-            .on_hover_text(format!("{:?} scope", scope.metadata().kind()));
-        if ui
-            .add_enabled(!scope_is_displayed, egui::Button::new("+"))
-            .on_hover_text("Add scope recursively")
-            .clicked()
-        {
-            additions.extend(scope_signal_ids);
-        }
-    });
-
-    if is_open {
-        ui.indent((&path, "scope"), |ui| {
-            for &signal_id in scope.signals() {
-                render_available_signal(
-                    ui,
-                    waveform,
-                    signal_id,
-                    matcher,
-                    scope_matched,
-                    displayed,
-                    additions,
-                );
-            }
-            for child in scope.scopes() {
-                render_available_scope(
-                    ui,
-                    waveform,
-                    child,
-                    &path,
-                    matcher,
-                    searching,
-                    scope_matched,
-                    expanded,
-                    displayed,
-                    additions,
-                );
-            }
-        });
-    }
-}
-
-fn scope_contains_match(
-    waveform: &Waveform,
-    scope: &ScopeNode,
-    matcher: Option<&SearchMatcher>,
-) -> bool {
-    let Some(matcher) = matcher else {
-        return true;
-    };
-    scope.signals().iter().any(|&id| {
-        waveform
-            .signal(id)
-            .is_some_and(|signal| matcher.is_match(signal.name()))
-    }) || scope
-        .scopes()
-        .iter()
-        .any(|child| scope_contains_match(waveform, child, Some(matcher)))
-}
-
-fn render_available_signal(
-    ui: &mut egui::Ui,
-    waveform: &Waveform,
-    signal_id: waveview_model::SignalId,
-    matcher: Option<&SearchMatcher>,
-    ancestor_matched: bool,
-    displayed: &HashSet<waveview_model::SignalId>,
-    additions: &mut Vec<waveview_model::SignalId>,
-) {
-    let Some(signal) = waveform.signal(signal_id) else {
-        return;
-    };
-    if !ancestor_matched && matcher.is_some_and(|matcher| !matcher.is_match(signal.name())) {
-        return;
-    }
-    let metadata = signal.metadata();
-    ui.horizontal(|ui| {
-        let already_displayed = displayed.contains(&signal_id);
-        if ui
-            .add_enabled(!already_displayed, egui::Button::new("+"))
-            .on_hover_text(if already_displayed {
-                "Already displayed"
-            } else {
-                "Add signal"
-            })
-            .clicked()
-        {
-            additions.push(signal_id);
-        }
-        ui.label(metadata.reference()).on_hover_text(format!(
-            "{} · {:?} · {} bit{}{}",
-            signal.name(),
-            metadata.kind(),
-            metadata.width(),
-            if metadata.width() == 1 { "" } else { "s" },
-            metadata
-                .index()
-                .map_or_else(String::new, |index| format!(" · {index:?}"))
-        ));
-    });
 }
 
 fn focus_first_search_match(viewer: &mut ViewerState) -> bool {

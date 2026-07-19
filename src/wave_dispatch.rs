@@ -1,8 +1,11 @@
 use eframe::egui;
+use std::collections::HashSet;
 use waveview_model::search::SearchMatcher;
 use waveview_model::vcd;
 use waveview_model::viewer::ViewerCommand;
 use waveview_model::viewer::ViewerState;
+use waveview_model::waveform::Waveform;
+use waveview_model::SignalId;
 
 #[cfg(all(feature = "reload", not(target_arch = "wasm32")))]
 use std::sync::{Arc, Mutex, OnceLock};
@@ -15,11 +18,14 @@ use waveview_model::vim::{VimInput, VimState};
 #[hot_lib_reloader::hot_module(dylib = "waveview_ui_reload", file_watch_debounce = 100)]
 mod hot_ui {
     use eframe::egui;
+    use std::collections::HashSet;
     use waveview_model::search::SearchMatcher;
     use waveview_model::vcd;
     use waveview_model::viewer::ViewerCommand;
     use waveview_model::viewer::ViewerState;
     use waveview_model::vim::{VimInput, VimState};
+    use waveview_model::waveform::Waveform;
+    use waveview_model::SignalId;
 
     hot_functions_from_file!("waveview-ui-reload/src/lib.rs");
 
@@ -53,6 +59,37 @@ pub fn render_signal_button(
 
     #[cfg(not(all(feature = "reload", not(target_arch = "wasm32"))))]
     waveview_ui::render_signal_button(ui, name, height, selected, matcher)
+}
+
+pub fn render_signal_activity_button(ui: &mut egui::Ui, selected: bool) -> bool {
+    #[cfg(all(feature = "reload", not(target_arch = "wasm32")))]
+    return hot_ui::render_signal_activity_button(ui, selected);
+
+    #[cfg(not(all(feature = "reload", not(target_arch = "wasm32"))))]
+    waveview_ui::render_signal_activity_button(ui, selected)
+}
+
+pub fn render_signal_browser_header(ui: &mut egui::Ui, all_signals_displayed: bool) -> bool {
+    #[cfg(all(feature = "reload", not(target_arch = "wasm32")))]
+    return hot_ui::render_signal_browser_header(ui, all_signals_displayed);
+
+    #[cfg(not(all(feature = "reload", not(target_arch = "wasm32"))))]
+    waveview_ui::render_signal_browser_header(ui, all_signals_displayed)
+}
+
+pub fn render_signal_browser_tree(
+    ui: &mut egui::Ui,
+    waveform: &Waveform,
+    query: &str,
+    expanded: &mut HashSet<String>,
+    displayed: &HashSet<SignalId>,
+    additions: &mut Vec<SignalId>,
+) {
+    #[cfg(all(feature = "reload", not(target_arch = "wasm32")))]
+    hot_ui::render_signal_browser_tree(ui, waveform, query, expanded, displayed, additions);
+
+    #[cfg(not(all(feature = "reload", not(target_arch = "wasm32"))))]
+    waveview_ui::render_signal_browser_tree(ui, waveform, query, expanded, displayed, additions);
 }
 
 pub fn render_vim_status(ui: &mut egui::Ui, vim: &VimState, message: Option<&str>) {

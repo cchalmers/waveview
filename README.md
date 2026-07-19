@@ -45,11 +45,11 @@ Run the viewer and UI watcher together with:
 nix run .#reload -- path/to/capture.vcd
 ```
 
-Alternatively, from `nix develop`, run `reload-waveview`. Changes under `waveview-ui` rebuild the
-native-only `waveview-ui-reload` shim and request an immediate egui repaint. Changes to
-`waveview-model` also rebuild the dylib, but changing the layout of shared model types while the host
-is running is unsafe; restart after those changes. Normal `cargo run`, release, and WASM builds
-remain statically linked.
+Alternatively, from `nix develop`, run `reload-waveview`. Changes under `waveview-ui` and changes to
+the Vim interpreter in `waveview-model/src/vim.rs` rebuild the native-only
+`waveview-ui-reload` shim and request an immediate egui repaint. Other model or stable-host changes
+show a restart-required status instead of attempting an unsafe reload. Normal `cargo run`, release,
+and WASM builds remain statically linked.
 
 ## Live VCD server
 

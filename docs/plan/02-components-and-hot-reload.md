@@ -83,6 +83,8 @@ move its dirty worktree or retain its websocket/backend coupling.
   `ViewerCommand`; static builds call the identical implementation directly.
 - Vim command interpretation, signal-name/search painting, mode status, and generated keyboard help
   now use the same reloadable dylib. The stable host retains raw event collection and effects.
+- The activity icon and available-signal header/tree are reloadable. Their host-owned panel,
+  `TextEdit`, `ScrollArea`, expansion set, and waveform/display state survive library replacement.
 - The reload runner reports building/failure state inside the viewer and leaves the last valid dylib
   active after a compilation error. Host/shared/ABI edits produce a sticky restart-required status;
   Vim behavior and shared Vim state live in separate files so the watcher boundary is explicit.
