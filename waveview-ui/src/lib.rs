@@ -37,11 +37,19 @@ pub fn render_signal_button(
     ui: &mut egui::Ui,
     name: &str,
     value: Option<&[waveview_model::vcd::Value]>,
+    value_format: waveview_model::viewer::ValueFormat,
     height: f32,
     selected: bool,
     matcher: Option<&SearchMatcher>,
-) -> bool {
-    displayed_items::render_signal_button(ui, name, value, height, selected, matcher)
+) -> egui::Response {
+    displayed_items::render_signal_button(ui, name, value, value_format, height, selected, matcher)
+}
+
+pub fn render_signal_format_menu(
+    ui: &mut egui::Ui,
+    current: waveview_model::viewer::ValueFormat,
+) -> Option<waveview_model::viewer::ValueFormat> {
+    displayed_items::render_signal_format_menu(ui, current)
 }
 
 pub fn render_signal_activity_button(ui: &mut egui::Ui, selected: bool) -> bool {

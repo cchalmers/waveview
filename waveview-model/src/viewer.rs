@@ -109,10 +109,36 @@ pub enum DisplayedItemKind {
     Timeline(String),
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ValueFormat {
+    Binary,
+    #[default]
+    Hexadecimal,
+    Unsigned,
+    Signed,
+    Ascii,
+}
+
+impl ValueFormat {
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "binary" | "bin" => Some(Self::Binary),
+            "hexadecimal" | "hex" => Some(Self::Hexadecimal),
+            "unsigned" | "uint" => Some(Self::Unsigned),
+            "signed" | "int" => Some(Self::Signed),
+            "ascii" => Some(Self::Ascii),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct DisplayedItem {
     id: DisplayedItemId,
     kind: DisplayedItemKind,
+    #[serde(default)]
+    value_format: ValueFormat,
 }
 
 impl DisplayedItem {
@@ -129,6 +155,10 @@ impl DisplayedItem {
             DisplayedItemKind::Signal(id) => Some(id),
             _ => None,
         }
+    }
+
+    pub fn value_format(&self) -> ValueFormat {
+        self.value_format
     }
 }
 
@@ -317,6 +347,7 @@ impl ViewerState {
                         items.push(DisplayedItem {
                             id: DisplayedItemId::new(self.next_displayed_item_id),
                             kind: DisplayedItemKind::Signal(signal_id),
+                            value_format: ValueFormat::default(),
                         });
                         self.next_displayed_item_id += 1;
                     }
@@ -352,6 +383,14 @@ impl ViewerState {
             }
             ViewerCommand::RemoveDisplayedItems(ids) => {
                 self.remove_displayed_items(&ids.into_iter().collect());
+            }
+            ViewerCommand::SetFocusedValueFormat(format) => {
+                if let Some(focused) = self.cursor.focused_item {
+                    self.set_displayed_value_format(focused, format);
+                }
+            }
+            ViewerCommand::SetDisplayedValueFormat { id, format } => {
+                self.set_displayed_value_format(id, format);
             }
             ViewerCommand::UndoDisplayChange => {
                 if let Some(previous) = self.display_undo.pop() {
@@ -413,6 +452,14 @@ impl ViewerState {
             self.display_redo.clear();
             self.repair_focus();
         }
+    }
+
+    fn set_displayed_value_format(&mut self, id: DisplayedItemId, format: ValueFormat) {
+        let mut items = self.displayed_items.clone();
+        if let Some(item) = items.iter_mut().find(|item| item.id == id) {
+            item.value_format = format;
+        }
+        self.commit_display_change(items);
     }
 
     fn remove_displayed_items(&mut self, ids: &HashSet<DisplayedItemId>) {
@@ -482,6 +529,11 @@ pub enum ViewerCommand {
     },
     RemoveDisplayedItem(DisplayedItemId),
     RemoveDisplayedItems(Vec<DisplayedItemId>),
+    SetFocusedValueFormat(ValueFormat),
+    SetDisplayedValueFormat {
+        id: DisplayedItemId,
+        format: ValueFormat,
+    },
     UndoDisplayChange,
     RedoDisplayChange,
     ScrollDisplayedRows(isize),
@@ -545,6 +597,7 @@ fn displayed_items_for(waveform: &Waveform) -> Vec<DisplayedItem> {
         .map(|(index, signal)| DisplayedItem {
             id: DisplayedItemId::new(index as u64),
             kind: DisplayedItemKind::Signal(signal.id()),
+            value_format: ValueFormat::default(),
         })
         .collect()
 }
@@ -668,6 +721,32 @@ mod tests {
         assert_eq!(state.displayed_items().len(), 2);
         state.apply(ViewerCommand::RedoDisplayChange);
         assert_eq!(state.displayed_items().len(), 3);
+    }
+
+    #[test]
+    fn focused_value_format_is_durable_and_undoable() {
+        let mut state = state_with_signals(2);
+        assert_eq!(
+            state.displayed_items()[0].value_format(),
+            ValueFormat::Hexadecimal
+        );
+
+        state.apply(ViewerCommand::SetFocusedValueFormat(ValueFormat::Signed));
+        assert_eq!(
+            state.displayed_items()[0].value_format(),
+            ValueFormat::Signed
+        );
+
+        state.apply(ViewerCommand::UndoDisplayChange);
+        assert_eq!(
+            state.displayed_items()[0].value_format(),
+            ValueFormat::Hexadecimal
+        );
+        state.apply(ViewerCommand::RedoDisplayChange);
+        assert_eq!(
+            state.displayed_items()[0].value_format(),
+            ValueFormat::Signed
+        );
     }
 
     #[test]

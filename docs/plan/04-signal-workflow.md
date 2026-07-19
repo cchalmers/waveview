@@ -28,7 +28,7 @@ and a separate flat displayed-signal list.
 ## Values and appearance
 
 - [x] Display each focused/visible signal's value at the primary cursor.
-- [ ] Implement binary, hexadecimal, unsigned, signed, and ASCII vector formats.
+- [x] Implement binary, hexadecimal, unsigned, signed, and ASCII vector formats.
 - [x] Give unknown and high-impedance values distinct rendering and text.
 - [ ] Add per-item color, height, alias, and format state.
 - [ ] Render scalar, vector, group, divider, and timeline rows through one displayed-item layout.
@@ -65,3 +65,7 @@ and a separate flat displayed-signal list.
   after a signal's final transition; scalar and four-state hexadecimal formatting is reloadable.
 - Unknown spans use a muted colored rail and faint wash; high-impedance spans use a dashed rail.
   Both remain recognizable when a segment is too narrow to show its textual value.
+- Displayed signals now carry durable, undoable value-format state. Binary, hexadecimal, arbitrary-
+  width unsigned decimal, two's-complement signed decimal, and escaped ASCII formatting apply to
+  both waveform labels and the cursor-value column; unknown digits fall back to lossless binary or
+  hexadecimal text rather than pretending to be numeric.

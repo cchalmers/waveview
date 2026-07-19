@@ -780,6 +780,7 @@ impl eframe::App for TemplateApp {
             .collect();
         let mut displayed_items = viewer.displayed_items().to_vec();
         let mut requested_focus = None;
+        let mut requested_value_format = None;
         let timeline_height = wave_dispatch::timeline_height();
         let reload_status = wave_dispatch::reload_status();
 
@@ -1035,18 +1036,34 @@ impl eframe::App for TemplateApp {
                                             .signal_id()
                                             .and_then(|id| viewer.waveform().signal(id))
                                         {
-                                            if wave_dispatch::render_signal_button(
-                                                ui,
-                                                signal.name(),
-                                                viewer.cursor().and_then(|time| {
-                                                    signal.signal().value_at(time)
-                                                }),
-                                                *row_height,
-                                                focused_item == Some(item.id()),
-                                                search_matcher.as_ref(),
-                                            ) {
+                                            let signal_response =
+                                                wave_dispatch::render_signal_button(
+                                                    ui,
+                                                    signal.name(),
+                                                    viewer.cursor().and_then(|time| {
+                                                        signal.signal().value_at(time)
+                                                    }),
+                                                    item.value_format(),
+                                                    *row_height,
+                                                    focused_item == Some(item.id()),
+                                                    search_matcher.as_ref(),
+                                                );
+                                            if signal_response.clicked()
+                                                || signal_response.secondary_clicked()
+                                            {
                                                 requested_focus = Some(item.id());
                                             }
+                                            signal_response.context_menu(|ui| {
+                                                if let Some(format) =
+                                                    wave_dispatch::render_signal_format_menu(
+                                                        ui,
+                                                        item.value_format(),
+                                                    )
+                                                {
+                                                    requested_value_format =
+                                                        Some((item.id(), format));
+                                                }
+                                            });
                                         }
                                     });
                                 });
@@ -1073,6 +1090,9 @@ impl eframe::App for TemplateApp {
         }
         if let Some(id) = requested_focus {
             viewer.apply(ViewerCommand::SetFocusedItem(id));
+        }
+        if let Some((id, format)) = requested_value_format {
+            viewer.apply(ViewerCommand::SetDisplayedValueFormat { id, format });
         }
 
         let mut pending_commands = Vec::new();

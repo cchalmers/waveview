@@ -87,6 +87,7 @@ single command string. Tcl commands translate to the same viewer commands used b
 - The dirty sibling fork has been audited and its minimal interpreter crate vendored with its
   BSD-3-Clause license and attribution. Non-library projects and documentation are omitted, and
   `eprompt` remains independent of Molt.
-- The first host command bridge queues `zoom fit`, `cursor set/clear`, relative signal focus,
-  regex search, undo, and redo, then applies their `ViewerCommand` values after evaluation returns.
-  `help` lists this live vocabulary; file/scope/mark/format commands remain to be added.
+- The host command bridge queues `zoom fit`, `cursor set/clear`, relative signal focus, focused
+  signal format, regex search, undo, and redo, then applies their `ViewerCommand` values after
+  evaluation returns. `help` lists this live vocabulary; file/scope/mark commands remain to be
+  added.

@@ -1,22 +1,30 @@
 use eframe::egui;
 use egui::*;
-use std::ops::RangeInclusive;
+use std::ops::{Range, RangeInclusive};
 use waveview_model::vcd;
+use waveview_model::viewer::ValueFormat;
 
 pub struct Wave<'a> {
     view_range: RangeInclusive<f32>,
     pub height: f32,
     name: &'a str,
     wave_data: &'a vcd::Signal,
+    value_format: ValueFormat,
 }
 
 impl<'a> Wave<'a> {
-    pub fn new(name: &'a str, view_range: RangeInclusive<f32>, wave_data: &'a vcd::Signal) -> Self {
+    pub fn new(
+        name: &'a str,
+        view_range: RangeInclusive<f32>,
+        wave_data: &'a vcd::Signal,
+        value_format: ValueFormat,
+    ) -> Self {
         Self {
             view_range,
             height: 32.0,
             wave_data,
             name,
+            value_format,
         }
     }
 
@@ -26,6 +34,7 @@ impl<'a> Wave<'a> {
             height,
             wave_data,
             name,
+            value_format,
         } = self;
         log::trace!("Wave::new({name})");
 
@@ -59,10 +68,10 @@ impl<'a> Wave<'a> {
                 ui,
                 &mut shapes,
                 wave_data,
-                first_time,
-                last_time,
+                first_time..last_time,
                 rect,
                 &view_range,
+                value_format,
             );
         }
         ui.painter().with_clip_rect(rect).extend(shapes);
@@ -96,8 +105,7 @@ fn render_scalar(
         add_scalar_segment(
             ui,
             shapes,
-            segment_start,
-            segment_end,
+            segment_start..segment_end,
             previous,
             rect,
             view_range,
@@ -121,8 +129,7 @@ fn render_scalar(
     add_scalar_segment(
         ui,
         shapes,
-        segment_start,
-        *view_range.end(),
+        segment_start..*view_range.end(),
         previous,
         rect,
         view_range,
@@ -133,15 +140,14 @@ fn render_scalar(
 fn add_scalar_segment(
     ui: &Ui,
     shapes: &mut Vec<Shape>,
-    start: f32,
-    end: f32,
+    segment: Range<f32>,
     value: vcd::Value,
     rect: Rect,
     view_range: &RangeInclusive<f32>,
     stroke: Stroke,
 ) {
-    let left = wave_pos(start, 0.5, rect, view_range).x;
-    let right = wave_pos(end, 0.5, rect, view_range).x;
+    let left = wave_pos(segment.start, 0.5, rect, view_range).x;
+    let right = wave_pos(segment.end, 0.5, rect, view_range).x;
     if right <= left {
         return;
     }
@@ -176,11 +182,13 @@ fn render_vector(
     ui: &Ui,
     shapes: &mut Vec<Shape>,
     signal: &vcd::Signal,
-    first_time: u64,
-    last_time: u64,
+    time_range: Range<u64>,
     rect: Rect,
     view_range: &RangeInclusive<f32>,
+    value_format: ValueFormat,
 ) {
+    let first_time = time_range.start;
+    let last_time = time_range.end;
     let stroke = ui.visuals().widgets.active.bg_stroke;
     for (time, _) in signal.range(first_time.saturating_add(1)..last_time) {
         if time <= first_time || time >= last_time {
@@ -211,11 +219,11 @@ fn render_vector(
         add_vector_segment(
             ui,
             shapes,
-            segment_start,
-            segment_end,
+            segment_start..segment_end,
             previous,
             rect,
             view_range,
+            value_format,
         );
         previous = value;
         segment_start = segment_end;
@@ -223,25 +231,25 @@ fn render_vector(
     add_vector_segment(
         ui,
         shapes,
-        segment_start,
-        *view_range.end(),
+        segment_start..*view_range.end(),
         previous,
         rect,
         view_range,
+        value_format,
     );
 }
 
 fn add_vector_segment(
     ui: &Ui,
     shapes: &mut Vec<Shape>,
-    start: f32,
-    end: f32,
+    segment: Range<f32>,
     value: &[vcd::Value],
     rect: Rect,
     view_range: &RangeInclusive<f32>,
+    value_format: ValueFormat,
 ) {
-    let start_pos = wave_pos(start, 0.5, rect, view_range);
-    let end_pos = wave_pos(end, 0.5, rect, view_range);
+    let start_pos = wave_pos(segment.start, 0.5, rect, view_range);
+    let end_pos = wave_pos(segment.end, 0.5, rect, view_range);
     let available_width = (end_pos.x - start_pos.x).max(0.0);
     if available_width <= 0.0 {
         return;
@@ -251,8 +259,11 @@ fn add_vector_segment(
         add_unknown_horizontal(
             shapes,
             Rect::from_min_max(
-                pos2(start_pos.x, wave_pos(start, 0.75, rect, view_range).y),
-                pos2(end_pos.x, wave_pos(end, 0.25, rect, view_range).y),
+                pos2(
+                    start_pos.x,
+                    wave_pos(segment.start, 0.75, rect, view_range).y,
+                ),
+                pos2(end_pos.x, wave_pos(segment.end, 0.25, rect, view_range).y),
             ),
             unknown_color(ui),
         );
@@ -272,7 +283,7 @@ fn add_vector_segment(
         ));
     }
 
-    let text = crate::value::format(value);
+    let text = crate::value::format(value, value_format);
     let font = epaint::text::FontId::new(12.0, text::FontFamily::Monospace);
     let color = ui.visuals().text_color();
     let mut galley = ui.fonts_mut(|fonts| fonts.layout_no_wrap(text, font.clone(), color));

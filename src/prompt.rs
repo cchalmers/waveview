@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use molt::{ContextID, Interp, MoltResult, Value};
 use waveview_model::ui_types::{PromptOutput, PromptOutputKind};
-use waveview_model::viewer::ViewerCommand;
+use waveview_model::viewer::{ValueFormat, ViewerCommand};
 
 const MAX_OUTPUT_ENTRIES: usize = 2_000;
 
@@ -52,6 +52,7 @@ fn command_help(_interp: &mut Interp, _id: ContextID, argv: &[Value]) -> MoltRes
          zoom fit\n\
          cursor set <ticks> | cursor clear\n\
          signal focus next|previous ?count?\n\
+         signal format binary|hex|unsigned|signed|ascii\n\
          search <regex>\n\
          undo | redo\n\
          Standard Tcl commands are also available."
@@ -169,10 +170,28 @@ fn command_cursor(interp: &mut Interp, id: ContextID, argv: &[Value]) -> MoltRes
 }
 
 fn command_signal(interp: &mut Interp, id: ContextID, argv: &[Value]) -> MoltResult {
-    molt::check_args(1, argv, 3, 4, "focus next|previous ?count?")?;
-    if argv[1].as_str() != "focus" {
-        return molt::molt_err!("unknown signal subcommand \"{}\": expected focus", argv[1]);
+    molt::check_args(1, argv, 2, 4, "focus|format ...")?;
+    match argv[1].as_str() {
+        "focus" => command_signal_focus(interp, id, argv),
+        "format" => {
+            molt::check_args(2, argv, 3, 3, "binary|hex|unsigned|signed|ascii")?;
+            let Some(format) = ValueFormat::from_name(argv[2].as_str()) else {
+                return molt::molt_err!(
+                    "unknown signal format \"{}\": expected binary, hex, unsigned, signed, or ascii",
+                    argv[2]
+                );
+            };
+            push_viewer_command(interp, id, ViewerCommand::SetFocusedValueFormat(format))
+        }
+        subcommand => molt::molt_err!(
+            "unknown signal subcommand \"{}\": expected focus or format",
+            subcommand
+        ),
     }
+}
+
+fn command_signal_focus(interp: &mut Interp, id: ContextID, argv: &[Value]) -> MoltResult {
+    molt::check_args(2, argv, 3, 4, "next|previous ?count?")?;
     let direction = match argv[2].as_str() {
         "next" => 1_isize,
         "previous" | "prev" => -1_isize,
@@ -259,7 +278,8 @@ mod tests {
     fn viewer_commands_are_queued_without_borrowing_viewer_state() {
         let mut prompt = PromptRuntime::default();
         prompt.set_input(
-            "zoom fit; cursor set 42; signal focus previous 2; search {clock.*}; undo".to_owned(),
+            "zoom fit; cursor set 42; signal focus previous 2; signal format signed; search {clock.*}; undo"
+                .to_owned(),
         );
 
         assert_eq!(
@@ -269,6 +289,7 @@ mod tests {
                 ViewerCommand::SetCursor(42),
                 ViewerCommand::RevealTime(42),
                 ViewerCommand::FocusDisplayedRelative(-2),
+                ViewerCommand::SetFocusedValueFormat(ValueFormat::Signed),
                 ViewerCommand::SetSearch("clock.*".to_owned()),
                 ViewerCommand::UndoDisplayChange,
             ]

@@ -17,7 +17,11 @@ pub fn render(
     let signals = viewer
         .displayed_items()
         .iter()
-        .filter_map(|item| item.signal_id().and_then(|id| viewer.waveform().signal(id)))
+        .filter_map(|item| {
+            item.signal_id()
+                .and_then(|id| viewer.waveform().signal(id))
+                .map(|signal| (signal, item.value_format()))
+        })
         .collect::<Vec<_>>();
 
     ui.painter().rect_filled(
@@ -37,13 +41,17 @@ pub fn render(
         hover_pos.map(|position| (position.x - canvas_rect.left()) / canvas_rect.width().max(1.0));
 
     ui.vertical(|ui| {
-        for signal in signals
+        for (signal, value_format) in signals
             .iter()
             .take(visible_rows.end)
             .skip(visible_rows.start)
         {
-            let mut wave =
-                crate::wave::Wave::new(signal.name(), view_start..=view_end, signal.signal());
+            let mut wave = crate::wave::Wave::new(
+                signal.name(),
+                view_start..=view_end,
+                signal.signal(),
+                *value_format,
+            );
             wave.height = row_height;
             wave.ui(ui);
         }

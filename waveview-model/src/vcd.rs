@@ -476,8 +476,8 @@ $enddefinitions $end
             [Value::V1, Value::V0, Value::V1, Value::V0,]
         );
         assert_eq!(signals[1].1.value_at(4), Some(&[Value::V0; 4][..]));
-        assert_eq!(signals[1].1.value_at(5), Some(&vector_at_five[..]));
-        assert_eq!(signals[1].1.value_at(100), Some(&vector_at_five[..]));
+        assert_eq!(signals[1].1.value_at(5), Some(vector_at_five));
+        assert_eq!(signals[1].1.value_at(100), Some(vector_at_five));
     }
 
     #[test]
