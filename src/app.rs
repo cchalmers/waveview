@@ -814,12 +814,9 @@ impl eframe::App for TemplateApp {
                             .stick_to_bottom(true)
                             .auto_shrink([false, false])
                             .show(ui, |ui| {
-                                ui.with_layout(
-                                    egui::Layout::bottom_up(egui::Align::Min),
-                                    |ui| {
-                                        wave_dispatch::render_prompt_output(ui, prompt.output());
-                                    },
-                                );
+                                ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+                                    wave_dispatch::render_prompt_output(ui, prompt.output());
+                                });
                             });
                     });
                 });
