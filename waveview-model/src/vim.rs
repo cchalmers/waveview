@@ -76,7 +76,7 @@ impl VimState {
         }
 
         match character {
-            'g' | 'd' | 'z' => {
+            'g' | 'd' | 'z' | 'm' | '`' | '\'' => {
                 self.pending.push(character);
                 Vec::new()
             }
@@ -204,6 +204,26 @@ impl VimState {
             ("z", 't') => self.reveal_focused(FocusPlacement::Top),
             ("z", 'z') => self.reveal_focused(FocusPlacement::Center),
             ("z", 'b') => self.reveal_focused(FocusPlacement::Bottom),
+            ("m", name) if name.is_ascii_lowercase() => {
+                self.count = None;
+                vec![ViewerCommand::SetMark(name)]
+            }
+            ("`", '`') => {
+                self.count = None;
+                vec![ViewerCommand::JumpToPrevious { exact: true }]
+            }
+            ("'", '\'') => {
+                self.count = None;
+                vec![ViewerCommand::JumpToPrevious { exact: false }]
+            }
+            ("`", name) if name.is_ascii_lowercase() => {
+                self.count = None;
+                vec![ViewerCommand::JumpToMark { name, exact: true }]
+            }
+            ("'", name) if name.is_ascii_lowercase() => {
+                self.count = None;
+                vec![ViewerCommand::JumpToMark { name, exact: false }]
+            }
             _ => {
                 self.count = None;
                 Vec::new()
@@ -459,6 +479,18 @@ pub const NORMAL_BINDINGS: &[Binding] = &[
         description: "start / end of capture",
     },
     Binding {
+        keys: "m{a-z}",
+        description: "set mark at selected signal and cursor time",
+    },
+    Binding {
+        keys: "`{mark} / '{mark}",
+        description: "jump to exact / signal-only mark position",
+    },
+    Binding {
+        keys: "`` / ''",
+        description: "return to previous jump position",
+    },
+    Binding {
         keys: "Ctrl-F / Ctrl-B",
         description: "pan one viewport forward / backward",
     },
@@ -660,6 +692,51 @@ mod tests {
                 &[VimInput::Char('2'), VimInput::Char('w')]
             ),
             vec![ViewerCommand::SetCursor(30), ViewerCommand::RevealTime(30)]
+        );
+    }
+
+    #[test]
+    fn mark_commands_follow_vim_exact_and_linewise_syntax() {
+        let viewer = viewer();
+        let mut vim = VimState::default();
+
+        assert_eq!(
+            keys(
+                &mut vim,
+                &viewer,
+                &[VimInput::Char('m'), VimInput::Char('a')]
+            ),
+            vec![ViewerCommand::SetMark('a')]
+        );
+        assert_eq!(
+            keys(
+                &mut vim,
+                &viewer,
+                &[VimInput::Char('`'), VimInput::Char('a')]
+            ),
+            vec![ViewerCommand::JumpToMark {
+                name: 'a',
+                exact: true,
+            }]
+        );
+        assert_eq!(
+            keys(
+                &mut vim,
+                &viewer,
+                &[VimInput::Char('\''), VimInput::Char('a')]
+            ),
+            vec![ViewerCommand::JumpToMark {
+                name: 'a',
+                exact: false,
+            }]
+        );
+        assert_eq!(
+            keys(
+                &mut vim,
+                &viewer,
+                &[VimInput::Char('`'), VimInput::Char('`')]
+            ),
+            vec![ViewerCommand::JumpToPrevious { exact: true }]
         );
     }
 

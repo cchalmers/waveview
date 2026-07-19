@@ -4,7 +4,9 @@ use eframe::egui;
 use eframe::egui::NumExt;
 use egui::*;
 use waveview_model::search::{SearchHistory, SearchMatcher};
-use waveview_model::ui_types::{MenuAction, SignalMenuAction, SignalPresentation};
+use waveview_model::ui_types::{
+    MenuAction, SignalMenuAction, SignalPresentation, TimelinePresentation,
+};
 use waveview_model::viewer::{
     DisplayedItem, EffectRequest, FocusPlacement, ViewerCommand, ViewerState,
 };
@@ -571,7 +573,11 @@ impl eframe::App for TemplateApp {
                     let submitted = !prompt.input().trim().is_empty();
                     command_history.accept(prompt.input());
                     for command in prompt.submit() {
-                        viewer.apply(command);
+                        for effect in viewer.apply(command) {
+                            if let EffectRequest::PromptText(text) = effect {
+                                prompt.push_result(text);
+                            }
+                        }
                     }
                     prompt_scroll_to_bottom = submitted;
                 }
@@ -648,6 +654,10 @@ impl eframe::App for TemplateApp {
                             *status_message = Some(format!("copied {text}"));
                             *status_expires_at = now + 2.0;
                             ctx.request_repaint();
+                        }
+                        EffectRequest::PromptText(text) => {
+                            prompt.push_result(text);
+                            prompt.open();
                         }
                         EffectRequest::OpenFile
                         | EffectRequest::OpenUrl(_)
@@ -1203,16 +1213,24 @@ impl eframe::App for TemplateApp {
         let mut pending_commands = Vec::new();
         let mut requested_wave_focus = None;
         let mut requested_wave_action = None;
+        let mark_times = viewer
+            .marks()
+            .values()
+            .map(|position| position.time())
+            .collect::<Vec<_>>();
 
         egui::CentralPanel::default().show(root_ui, |ui| {
             let time_viewport = viewer.viewport();
             wave_dispatch::render_timeline(
                 ui,
-                viewer.capture_end(),
-                time_viewport.start().floor().max(0.0) as u64,
-                time_viewport.end().ceil().max(1.0) as u64,
-                viewer.cursor(),
-                viewer.cursor_state().measurement_start(),
+                TimelinePresentation {
+                    capture_end: viewer.capture_end(),
+                    view_start: time_viewport.start().floor().max(0.0) as u64,
+                    view_end: time_viewport.end().ceil().max(1.0) as u64,
+                    cursor: viewer.cursor(),
+                    measurement_start: viewer.cursor_state().measurement_start(),
+                },
+                &mark_times,
                 &mut pending_commands,
             );
 

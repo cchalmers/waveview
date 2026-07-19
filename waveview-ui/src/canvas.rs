@@ -123,6 +123,19 @@ pub fn render(
         }
     }
 
+    for position in viewer.marks().values() {
+        let mark_x = canvas_rect.left() + (position.time() as f32 - view_start) * pixels_per_tick;
+        if canvas_rect.x_range().contains(mark_x) {
+            ui.painter().line_segment(
+                [
+                    egui::pos2(mark_x, interaction_rect.top()),
+                    egui::pos2(mark_x, interaction_rect.bottom()),
+                ],
+                egui::Stroke::new(1.0, egui::Color32::LIGHT_GREEN.linear_multiply(0.65)),
+            );
+        }
+    }
+
     if let Some(cursor_time) = viewer.cursor() {
         let cursor_x = canvas_rect.left() + (cursor_time as f32 - view_start) * pixels_per_tick;
         if canvas_rect.x_range().contains(cursor_x) {

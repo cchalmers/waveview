@@ -176,20 +176,9 @@ pub fn render_wave_canvas(
 #[unsafe(no_mangle)]
 pub fn render_timeline(
     ui: &mut egui::Ui,
-    capture_end: u64,
-    view_start: u64,
-    view_end: u64,
-    cursor: Option<u64>,
-    measurement_start: Option<u64>,
+    presentation: waveview_model::ui_types::TimelinePresentation,
+    marks: &[u64],
     commands: &mut Vec<ViewerCommand>,
 ) {
-    waveview_ui::render_timeline(
-        ui,
-        capture_end,
-        view_start,
-        view_end,
-        cursor,
-        measurement_start,
-        commands,
-    );
+    waveview_ui::render_timeline(ui, presentation, marks, commands);
 }

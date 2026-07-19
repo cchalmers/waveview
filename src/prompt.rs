@@ -30,6 +30,8 @@ impl Default for PromptRuntime {
         interp.add_context_command("cursor", command_cursor, viewer_context);
         interp.add_context_command("signal", command_signal, viewer_context);
         interp.add_context_command("search", command_search, viewer_context);
+        interp.add_context_command("marks", command_marks, viewer_context);
+        interp.add_context_command("delmarks", command_delmarks, viewer_context);
         interp.add_context_command("undo", command_undo, viewer_context);
         interp.add_context_command("redo", command_redo, viewer_context);
 
@@ -55,6 +57,7 @@ fn command_help(_interp: &mut Interp, _id: ContextID, argv: &[Value]) -> MoltRes
          signal format binary|hex|unsigned|signed|ascii\n\
          signal alias <name> | signal unalias\n\
          signal color default|red|orange|yellow|green|cyan|blue|purple|gray\n\
+         marks | delmarks <a-z...>|all\n\
          search <regex>\n\
          undo | redo\n\
          Standard Tcl commands are also available."
@@ -94,6 +97,12 @@ impl PromptRuntime {
 
     pub fn output(&self) -> &[PromptOutput] {
         &self.output
+    }
+
+    pub fn push_result(&mut self, text: impl Into<String>) {
+        self.output
+            .push(PromptOutput::new(text, PromptOutputKind::Result));
+        self.trim_output();
     }
 
     pub fn submit(&mut self) -> Vec<ViewerCommand> {
@@ -249,6 +258,28 @@ fn command_signal_focus(interp: &mut Interp, id: ContextID, argv: &[Value]) -> M
     )
 }
 
+fn command_marks(interp: &mut Interp, id: ContextID, argv: &[Value]) -> MoltResult {
+    molt::check_args(1, argv, 1, 1, "")?;
+    push_viewer_command(interp, id, ViewerCommand::RequestMarkList)
+}
+
+fn command_delmarks(interp: &mut Interp, id: ContextID, argv: &[Value]) -> MoltResult {
+    molt::check_args(1, argv, 2, usize::MAX, "<a-z...>|all")?;
+    if argv[1..].iter().any(|value| value.as_str() == "all") {
+        return push_viewer_command(interp, id, ViewerCommand::ClearMarks);
+    }
+    let mut names = Vec::new();
+    for value in &argv[1..] {
+        for name in value.as_str().chars() {
+            if !name.is_ascii_lowercase() {
+                return molt::molt_err!("invalid mark \"{}\": expected a-z", name);
+            }
+            names.push(name);
+        }
+    }
+    push_viewer_command(interp, id, ViewerCommand::DeleteMarks(names))
+}
+
 fn command_search(interp: &mut Interp, id: ContextID, argv: &[Value]) -> MoltResult {
     molt::check_args(1, argv, 2, 2, "pattern")?;
     push_viewer_command(interp, id, ViewerCommand::SetSearch(argv[1].to_string()))
@@ -308,7 +339,7 @@ mod tests {
     fn viewer_commands_are_queued_without_borrowing_viewer_state() {
         let mut prompt = PromptRuntime::default();
         prompt.set_input(
-            "zoom fit; cursor set 42; signal focus previous 2; signal format signed; signal alias {program counter}; signal color cyan; search {clock.*}; undo"
+            "zoom fit; cursor set 42; signal focus previous 2; signal format signed; signal alias {program counter}; signal color cyan; marks; delmarks ab; search {clock.*}; undo"
                 .to_owned(),
         );
 
@@ -322,6 +353,8 @@ mod tests {
                 ViewerCommand::SetFocusedValueFormat(ValueFormat::Signed),
                 ViewerCommand::SetFocusedAlias(Some("program counter".to_owned())),
                 ViewerCommand::SetFocusedColor(DisplayColor::Cyan),
+                ViewerCommand::RequestMarkList,
+                ViewerCommand::DeleteMarks(vec!['a', 'b']),
                 ViewerCommand::SetSearch("clock.*".to_owned()),
                 ViewerCommand::UndoDisplayChange,
             ]
@@ -336,6 +369,6 @@ mod tests {
         assert!(prompt
             .output()
             .iter()
-            .any(|entry| entry.text.contains("signal alias <name>")));
+            .any(|entry| entry.text.contains("marks | delmarks")));
     }
 }

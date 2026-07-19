@@ -1,7 +1,9 @@
 use eframe::egui;
 use std::collections::HashSet;
 use waveview_model::search::SearchMatcher;
-use waveview_model::ui_types::{MenuAction, PromptOutput, SignalMenuAction, SignalPresentation};
+use waveview_model::ui_types::{
+    MenuAction, PromptOutput, SignalMenuAction, SignalPresentation, TimelinePresentation,
+};
 use waveview_model::viewer::ViewerCommand;
 use waveview_model::viewer::ViewerState;
 use waveview_model::waveform::Waveform;
@@ -247,34 +249,15 @@ pub fn timeline_height() -> f32 {
 
 pub fn render_timeline(
     ui: &mut egui::Ui,
-    capture_end: u64,
-    view_start: u64,
-    view_end: u64,
-    cursor: Option<u64>,
-    measurement_start: Option<u64>,
+    presentation: TimelinePresentation,
+    marks: &[u64],
     commands: &mut Vec<ViewerCommand>,
 ) {
     #[cfg(all(feature = "reload", not(target_arch = "wasm32")))]
-    hot_ui::render_timeline(
-        ui,
-        capture_end,
-        view_start,
-        view_end,
-        cursor,
-        measurement_start,
-        commands,
-    );
+    hot_ui::render_timeline(ui, presentation, marks, commands);
 
     #[cfg(not(all(feature = "reload", not(target_arch = "wasm32"))))]
-    waveview_ui::render_timeline(
-        ui,
-        capture_end,
-        view_start,
-        view_end,
-        cursor,
-        measurement_start,
-        commands,
-    );
+    waveview_ui::render_timeline(ui, presentation, marks, commands);
 }
 
 pub fn render_wave_canvas(

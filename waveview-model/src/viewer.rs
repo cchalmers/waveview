@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 use crate::waveform::Waveform;
 use crate::{DisplayedItemId, SignalId};
@@ -229,6 +229,22 @@ pub struct CursorState {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct MarkPosition {
+    item: DisplayedItemId,
+    time: u64,
+}
+
+impl MarkPosition {
+    pub fn item(self) -> DisplayedItemId {
+        self.item
+    }
+
+    pub fn time(self) -> u64 {
+        self.time
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum FocusPlacement {
     Top,
     Center,
@@ -258,6 +274,8 @@ pub struct ViewerState {
     viewport: TimeViewport,
     cursor: CursorState,
     search: String,
+    marks: BTreeMap<char, MarkPosition>,
+    previous_jump: Option<MarkPosition>,
     display_undo: Vec<Vec<DisplayedItem>>,
     display_redo: Vec<Vec<DisplayedItem>>,
     next_displayed_item_id: u64,
@@ -282,6 +300,8 @@ impl ViewerState {
                 ..CursorState::default()
             },
             search: String::new(),
+            marks: BTreeMap::new(),
+            previous_jump: None,
             display_undo: Vec::new(),
             display_redo: Vec::new(),
             next_displayed_item_id,
@@ -316,6 +336,10 @@ impl ViewerState {
         &self.search
     }
 
+    pub fn marks(&self) -> &BTreeMap<char, MarkPosition> {
+        &self.marks
+    }
+
     /// Apply one command and return host work requested by that command.
     pub fn apply(&mut self, command: ViewerCommand) -> Vec<EffectRequest> {
         match command {
@@ -336,6 +360,8 @@ impl ViewerState {
                     ..CursorState::default()
                 };
                 self.search.clear();
+                self.marks.clear();
+                self.previous_jump = None;
                 self.display_undo.clear();
                 self.display_redo.clear();
                 self.next_displayed_item_id = self.displayed_items.len() as u64;
@@ -469,6 +495,32 @@ impl ViewerState {
             ViewerCommand::SetDisplayedColor { id, color } => {
                 self.set_displayed_color(id, color);
             }
+            ViewerCommand::SetMark(name) => {
+                if name.is_ascii_lowercase() {
+                    if let Some(position) = self.current_position() {
+                        self.marks.insert(name, position);
+                    }
+                }
+            }
+            ViewerCommand::JumpToMark { name, exact } => {
+                if let Some(position) = self.marks.get(&name).copied() {
+                    return self.jump_to_position(position, exact, true);
+                }
+            }
+            ViewerCommand::JumpToPrevious { exact } => {
+                if let Some(position) = self.previous_jump {
+                    return self.jump_to_position(position, exact, true);
+                }
+            }
+            ViewerCommand::DeleteMarks(names) => {
+                for name in names {
+                    self.marks.remove(&name);
+                }
+            }
+            ViewerCommand::ClearMarks => self.marks.clear(),
+            ViewerCommand::RequestMarkList => {
+                return vec![EffectRequest::PromptText(self.mark_list())];
+            }
             ViewerCommand::UndoDisplayChange => {
                 if let Some(previous) = self.display_undo.pop() {
                     self.display_redo
@@ -563,6 +615,62 @@ impl ViewerState {
         self.commit_display_change(items);
     }
 
+    fn current_position(&self) -> Option<MarkPosition> {
+        Some(MarkPosition {
+            item: self.cursor.focused_item?,
+            time: self.cursor.time?,
+        })
+    }
+
+    fn jump_to_position(
+        &mut self,
+        position: MarkPosition,
+        exact: bool,
+        record_previous: bool,
+    ) -> Vec<EffectRequest> {
+        if !self
+            .displayed_items
+            .iter()
+            .any(|item| item.id == position.item)
+        {
+            return Vec::new();
+        }
+        let previous = self.current_position();
+        self.cursor.focused_item = Some(position.item);
+        if exact {
+            let time = position.time.min(self.capture_end());
+            self.cursor.time = Some(time);
+            self.viewport.reveal(time as f64, self.capture_end());
+        }
+        if record_previous {
+            self.previous_jump = previous;
+        }
+        vec![EffectRequest::RevealFocusedItem(FocusPlacement::Center)]
+    }
+
+    fn mark_list(&self) -> String {
+        if self.marks.is_empty() {
+            return "No marks set".to_owned();
+        }
+        let mut result = String::from("mark  time  signal");
+        for (&name, &position) in &self.marks {
+            let signal = self
+                .displayed_items
+                .iter()
+                .find(|item| item.id == position.item)
+                .and_then(|item| {
+                    item.alias().map(str::to_owned).or_else(|| {
+                        item.signal_id()
+                            .and_then(|id| self.waveform.signal(id))
+                            .map(|signal| signal.name().to_owned())
+                    })
+                })
+                .unwrap_or_else(|| "[unresolved]".to_owned());
+            result.push_str(&format!("\n {name}    {}  {signal}", position.time));
+        }
+        result
+    }
+
     fn remove_displayed_items(&mut self, ids: &HashSet<DisplayedItemId>) {
         let focused_index = self.cursor.focused_item.and_then(|focused| {
             ids.contains(&focused)
@@ -645,6 +753,17 @@ pub enum ViewerCommand {
         id: DisplayedItemId,
         color: DisplayColor,
     },
+    SetMark(char),
+    JumpToMark {
+        name: char,
+        exact: bool,
+    },
+    JumpToPrevious {
+        exact: bool,
+    },
+    DeleteMarks(Vec<char>),
+    ClearMarks,
+    RequestMarkList,
     UndoDisplayChange,
     RedoDisplayChange,
     ScrollDisplayedRows(isize),
@@ -675,6 +794,7 @@ pub enum EffectRequest {
         count: usize,
     },
     CopyText(String),
+    PromptText(String),
     OpenFile,
     OpenUrl(String),
     ConnectLive(String),
@@ -887,6 +1007,54 @@ mod tests {
         state.apply(ViewerCommand::RedoDisplayChange);
         assert_eq!(state.displayed_items()[0].alias(), Some("instruction"));
         assert_eq!(state.displayed_items()[0].color(), DisplayColor::Cyan);
+    }
+
+    #[test]
+    fn marks_jump_exactly_or_linewise_and_track_the_previous_position() {
+        let mut state = state_with_signals(2);
+        let first = state.displayed_items()[0].id();
+        let second = state.displayed_items()[1].id();
+        state.apply(ViewerCommand::SetCursor(20));
+        state.apply(ViewerCommand::SetMark('a'));
+
+        state.apply(ViewerCommand::SetFocusedItem(second));
+        state.apply(ViewerCommand::SetCursor(80));
+        assert_eq!(
+            state.apply(ViewerCommand::JumpToMark {
+                name: 'a',
+                exact: true,
+            }),
+            vec![EffectRequest::RevealFocusedItem(FocusPlacement::Center)]
+        );
+        assert_eq!(state.cursor_state().focused_item(), Some(first));
+        assert_eq!(state.cursor(), Some(20));
+
+        state.apply(ViewerCommand::JumpToPrevious { exact: true });
+        assert_eq!(state.cursor_state().focused_item(), Some(second));
+        assert_eq!(state.cursor(), Some(80));
+
+        state.apply(ViewerCommand::SetCursor(60));
+        state.apply(ViewerCommand::JumpToMark {
+            name: 'a',
+            exact: false,
+        });
+        assert_eq!(state.cursor_state().focused_item(), Some(first));
+        assert_eq!(state.cursor(), Some(60));
+    }
+
+    #[test]
+    fn mark_listing_and_deletion_are_command_driven() {
+        let mut state = state_with_signals(1);
+        state.apply(ViewerCommand::SetCursor(12));
+        state.apply(ViewerCommand::SetMark('b'));
+
+        let effects = state.apply(ViewerCommand::RequestMarkList);
+        assert!(matches!(
+            effects.as_slice(),
+            [EffectRequest::PromptText(text)] if text.contains("b    12")
+        ));
+        state.apply(ViewerCommand::DeleteMarks(vec!['b']));
+        assert!(state.marks().is_empty());
     }
 
     #[test]

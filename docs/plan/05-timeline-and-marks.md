@@ -62,3 +62,14 @@ offer rebinding when a matching signal returns.
 - Marks, exact/line jumps, jump history, and all three visual modes survive UI hot reload.
 - Marks and selections persist in session state and degrade safely after waveform replacement.
 - Timeline mapping tests cover high timestamp precision and zoom limits.
+
+## Current progress
+
+- Local `a-z` marks store a displayed-item ID and exact capture time. `m{a-z}`, exact `` `{mark} ``,
+  linewise `'{mark}`, and previous-jump `` `` ``/`''` syntax run through the Vim command engine.
+- Exact jumps restore signal and time; linewise jumps restore the signal while preserving the current
+  time. Both reveal the destination row, and previous-jump positions toggle in Vim fashion.
+- Mark times are painted across the timeline and waveform canvas. `marks`, `delmarks <names>`, and
+  `delmarks all` provide the initial Molt lifecycle and report unresolved removed signals safely.
+- Marks currently reset on waveform replacement; compatible-source preservation and unresolved-path
+  rebinding remain part of the session/source identity work.

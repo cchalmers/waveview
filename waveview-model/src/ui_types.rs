@@ -11,6 +11,15 @@ pub struct SignalPresentation {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TimelinePresentation {
+    pub capture_end: u64,
+    pub view_start: u64,
+    pub view_end: u64,
+    pub cursor: Option<u64>,
+    pub measurement_start: Option<u64>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MenuAction {
     OpenFile,
     OpenUrl,

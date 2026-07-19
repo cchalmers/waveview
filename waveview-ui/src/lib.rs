@@ -168,20 +168,9 @@ pub fn render_wave_canvas(
 /// Render the generic timeline and translate its backend-free actions into viewer commands.
 pub fn render_timeline(
     ui: &mut egui::Ui,
-    capture_end: u64,
-    view_start: u64,
-    view_end: u64,
-    cursor: Option<u64>,
-    measurement_start: Option<u64>,
+    presentation: waveview_model::ui_types::TimelinePresentation,
+    marks: &[u64],
     commands: &mut Vec<ViewerCommand>,
 ) {
-    timeline_adapter::render(
-        ui,
-        capture_end,
-        view_start,
-        view_end,
-        cursor,
-        measurement_start,
-        commands,
-    );
+    timeline_adapter::render(ui, presentation, marks, commands);
 }
