@@ -535,127 +535,161 @@ impl eframe::App for TemplateApp {
         let mut displayed_items = viewer.displayed_items().to_vec();
         let mut requested_focus = None;
         let focused_item = viewer.cursor_state().focused_item();
+        let timeline_height = wave_dispatch::timeline_height();
 
-        egui::Panel::left("side_panel").show(root_ui, |ui| {
-            ui.set_width(180.0);
-            let max_rect = ui.max_rect();
+        egui::Panel::left("side_panel")
+            .default_size(180.0)
+            .min_size(120.0)
+            .max_size(600.0)
+            .resizable(true)
+            .show(root_ui, |ui| {
+                let max_rect = ui.max_rect();
 
-            ui.horizontal(|ui| {
-                // TODO adjust scroll offset so you don't move when changing height
-                ui.label("🔎");
-                ui.text_edit_singleline(&mut search_text);
-            });
-            // ui.separator();
+                let (header_rect, _) = ui.allocate_exact_size(
+                    egui::vec2(ui.available_width(), timeline_height),
+                    egui::Sense::hover(),
+                );
+                ui.scope_builder(
+                    egui::UiBuilder::new()
+                        .max_rect(header_rect)
+                        .layout(egui::Layout::left_to_right(egui::Align::Center)),
+                    |ui| {
+                        ui.label("🔎");
+                        ui.text_edit_singleline(&mut search_text);
+                    },
+                );
+                let rows_top = ui.next_widget_position().y;
 
-            let spacing = ui.spacing().item_spacing;
-            let row_height_with_spacing = *row_height + spacing.y;
+                let spacing = ui.spacing().item_spacing;
+                let row_height_with_spacing = *row_height + spacing.y;
+                let name_row_y_offset = spacing.y * 1.75;
 
-            use egui::*;
+                use egui::*;
 
-            let viewport =
-                Rect::from_min_size(egui::pos2(8.0, 16.0 - *y_offset), egui::vec2(180.0, 900.0));
+                let viewport = Rect::from_min_size(
+                    egui::pos2(max_rect.left(), rows_top + name_row_y_offset - *y_offset),
+                    egui::vec2(max_rect.width(), max_rect.height() + *y_offset),
+                );
 
-            let mut ui = ui.new_child(
-                egui::UiBuilder::new()
-                    .max_rect(viewport)
-                    .layout(*ui.layout()),
-            );
+                let mut ui = ui.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(viewport)
+                        .layout(*ui.layout()),
+                );
 
-            let mut content_clip_rect = max_rect.expand(ui.visuals().clip_rect_margin);
+                let mut content_clip_rect = max_rect.expand(ui.visuals().clip_rect_margin);
 
-            // add clipping for the "timeline" bar
-            content_clip_rect.min.y += 25.0;
-            // add clipping for the separator
-            // content_clip_rect.min.y += 2.0;
-            ui.set_clip_rect(content_clip_rect);
-            let matches_search = |item: &DisplayedItem| {
-                item.signal_id()
-                    .and_then(|id| viewer.waveform().signal(id))
-                    .is_some_and(|signal| signal.name().contains(&search_text))
-            };
-            let num_rows = displayed_items
-                .iter()
-                .filter(|item| matches_search(item))
-                .count();
-            ui.set_height((row_height_with_spacing * num_rows as f32 - spacing.y).at_least(0.0));
-            // let min_row = (viewport.min.y / row_height_with_spacing);
-            let min_row = (*y_offset / row_height_with_spacing).floor().at_least(0.0) as usize;
-            // let max_row = (viewport.max.y / row_height_with_spacing).ceil() as usize + 1;
-            let max_row =
-                ((*y_offset + max_rect.size().y) / row_height_with_spacing).ceil() as usize + 1;
-            let max_row = max_row.at_most(num_rows);
+                content_clip_rect.min.y = rows_top;
+                ui.set_clip_rect(content_clip_rect);
+                let matches_search = |item: &DisplayedItem| {
+                    item.signal_id()
+                        .and_then(|id| viewer.waveform().signal(id))
+                        .is_some_and(|signal| signal.name().contains(&search_text))
+                };
+                let num_rows = displayed_items
+                    .iter()
+                    .filter(|item| matches_search(item))
+                    .count();
+                ui.set_height(
+                    (row_height_with_spacing * num_rows as f32 - spacing.y).at_least(0.0),
+                );
+                // let min_row = (viewport.min.y / row_height_with_spacing);
+                let min_row = (*y_offset / row_height_with_spacing).floor().at_least(0.0) as usize;
+                // let max_row = (viewport.max.y / row_height_with_spacing).ceil() as usize + 1;
+                let max_row = ((*y_offset + max_rect.bottom() - rows_top) / row_height_with_spacing)
+                    .ceil() as usize
+                    + 1;
+                let max_row = max_row.at_most(num_rows);
 
-            ui.set_height((row_height_with_spacing * num_rows as f32 + spacing.y).at_least(0.0));
-            let max_row = max_row.at_most(num_rows);
+                ui.set_height(
+                    (row_height_with_spacing * num_rows as f32 + spacing.y).at_least(0.0),
+                );
+                let max_row = max_row.at_most(num_rows);
 
-            // let y_min = ui.max_rect().top() + min_row as f32 * row_height_with_spacing;
-            // let y_max = ui.max_rect().top() + max_row as f32 * row_height_with_spacing;
+                // let y_min = ui.max_rect().top() + min_row as f32 * row_height_with_spacing;
+                // let y_max = ui.max_rect().top() + max_row as f32 * row_height_with_spacing;
 
-            // let rect = egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), y_min..=y_max);
+                // let rect = egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), y_min..=y_max);
 
-            if search_text.is_empty() {
-                let response = egui_dnd::dnd(&mut ui, "dnd").show_custom(|ui, iter| {
-                    ui.horizontal(|ui| {
-                        ui.set_height(25.0 + row_height_with_spacing * min_row as f32)
+                if search_text.is_empty() {
+                    let response = egui_dnd::dnd(&mut ui, "dnd").show_custom(|ui, iter| {
+                        if min_row > 0 {
+                            ui.add_space(row_height_with_spacing * min_row as f32);
+                        }
+                        for (i, item) in displayed_items
+                            .iter()
+                            .enumerate()
+                            .take(max_row)
+                            .skip(min_row)
+                        {
+                            iter.next(ui, egui::Id::new(item.id()), i, true, |ui, item_handle| {
+                                item_handle.ui(ui, |ui, handle, _state| {
+                                    ui.horizontal(|ui| {
+                                        ui.set_height(*row_height);
+                                        handle.ui(ui, |ui| {
+                                            if let Some(signal) = item
+                                                .signal_id()
+                                                .and_then(|id| viewer.waveform().signal(id))
+                                            {
+                                                let size =
+                                                    egui::vec2(ui.available_width(), *row_height);
+                                                if ui
+                                                    .add_sized(
+                                                        size,
+                                                        egui::Button::selectable(
+                                                            focused_item == Some(item.id()),
+                                                            signal.name(),
+                                                        )
+                                                        .truncate(),
+                                                    )
+                                                    .clicked()
+                                                {
+                                                    requested_focus = Some(item.id());
+                                                }
+                                            }
+                                        });
+                                    });
+                                })
+                            });
+                        }
                     });
-                    for (i, item) in displayed_items
+                    if let Some(update) = response.final_update() {
+                        egui_dnd::utils::shift_vec(update.from, update.to, &mut displayed_items);
+                    }
+                } else {
+                    if min_row > 0 {
+                        ui.add_space(row_height_with_spacing * min_row as f32);
+                    }
+                    for item in displayed_items
                         .iter()
-                        .enumerate()
+                        .filter(|item| matches_search(item))
                         .take(max_row)
                         .skip(min_row)
                     {
-                        iter.next(ui, egui::Id::new(item.id()), i, true, |ui, item_handle| {
-                            item_handle.ui(ui, |ui, handle, _state| {
-                                ui.horizontal(|ui| {
-                                    ui.set_height(*row_height);
-                                    handle.ui(ui, |ui| {
-                                        if let Some(signal) = item
-                                            .signal_id()
-                                            .and_then(|id| viewer.waveform().signal(id))
-                                        {
-                                            if ui
-                                                .selectable_label(
-                                                    focused_item == Some(item.id()),
-                                                    signal.name(),
-                                                )
-                                                .clicked()
-                                            {
-                                                requested_focus = Some(item.id());
-                                            }
-                                        }
-                                    });
-                                });
-                            })
+                        ui.horizontal(|ui| {
+                            ui.set_height(*row_height);
+                            if let Some(signal) =
+                                item.signal_id().and_then(|id| viewer.waveform().signal(id))
+                            {
+                                let size = egui::vec2(ui.available_width(), *row_height);
+                                if ui
+                                    .add_sized(
+                                        size,
+                                        egui::Button::selectable(
+                                            focused_item == Some(item.id()),
+                                            signal.name(),
+                                        )
+                                        .truncate(),
+                                    )
+                                    .clicked()
+                                {
+                                    requested_focus = Some(item.id());
+                                }
+                            }
                         });
                     }
-                });
-                if let Some(update) = response.final_update() {
-                    egui_dnd::utils::shift_vec(update.from, update.to, &mut displayed_items);
                 }
-            } else {
-                ui.horizontal(|ui| ui.set_height(25.0 + row_height_with_spacing * min_row as f32));
-                for item in displayed_items
-                    .iter()
-                    .filter(|item| matches_search(item))
-                    .take(max_row)
-                    .skip(min_row)
-                {
-                    ui.horizontal(|ui| {
-                        ui.set_height(*row_height);
-                        if let Some(signal) =
-                            item.signal_id().and_then(|id| viewer.waveform().signal(id))
-                        {
-                            if ui
-                                .selectable_label(focused_item == Some(item.id()), signal.name())
-                                .clicked()
-                            {
-                                requested_focus = Some(item.id());
-                            }
-                        }
-                    });
-                }
-            }
-        });
+            });
 
         if search_text != viewer.search() {
             viewer.apply(ViewerCommand::SetSearch(search_text));
@@ -673,10 +707,17 @@ impl eframe::App for TemplateApp {
         let persistent_cursor = viewer.cursor();
 
         egui::CentralPanel::default().show(root_ui, |ui| {
-            // The central panel the region left after adding TopPanel's and SidePanel's
-            // ui.heading("eframe template");
+            let time_viewport = viewer.viewport();
+            wave_dispatch::render_timeline(
+                ui,
+                viewer.capture_end(),
+                time_viewport.start().floor().max(0.0) as u64,
+                time_viewport.end().ceil().max(1.0) as u64,
+                viewer.cursor(),
+                viewer.cursor_state().measurement_start(),
+                &mut pending_commands,
+            );
 
-            // let clip_rect = ui.clip_rect();
             let min_rect = ui.min_rect();
             let max_rect = ui.max_rect();
 
@@ -717,10 +758,8 @@ impl eframe::App for TemplateApp {
                 let y_min = ui.max_rect().top() + min_row as f32 * row_height_with_spacing;
                 let y_max = ui.max_rect().top() + max_row as f32 * row_height_with_spacing;
 
-                let rect =
-                    egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), y_min + 16.0..=y_max);
+                let rect = egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), y_min..=y_max);
 
-                let time_viewport = viewer.viewport();
                 let view_start = time_viewport.start() as f32;
                 let view_end = time_viewport.end() as f32;
                 let pixels_per_tick = rect.width() / time_viewport.span() as f32;
@@ -733,9 +772,6 @@ impl eframe::App for TemplateApp {
 
                 let wave_resp = ui
                     .scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
-                        let mut clip_rect = ui.clip_rect();
-                        clip_rect.min.y += 16.0;
-                        ui.set_clip_rect(clip_rect);
                         ui.skip_ahead_auto_ids(min_row); // Make sure we get consistent IDs.
                         let resp = ui.interact(
                             max_rect,
@@ -794,7 +830,6 @@ impl eframe::App for TemplateApp {
 
                 let yellow = egui::Color32::from_rgb(0xd2, 0x99, 0x1d);
 
-                let mut hover_t = None;
                 if let Some(pos) = &wave_resp.hover_pos() {
                     use egui::*;
                     let mut shapes = vec![];
@@ -803,21 +838,15 @@ impl eframe::App for TemplateApp {
                     let x = pos.x;
                     let t = view_start + (x - rect.min.x) / pixels_per_tick;
                     let t_rounded = t.round();
-                    hover_t = Some(t_rounded as usize);
+                    let hover_t = t_rounded as u64;
 
                     if wave_resp.drag_started() {
-                        active_measurement_start = hover_t.map(|time| time as u64);
-                        if let Some(time) = hover_t {
-                            pending_commands.push(ViewerCommand::BeginMeasurement(time as u64));
-                        }
+                        active_measurement_start = Some(hover_t);
+                        pending_commands.push(ViewerCommand::BeginMeasurement(hover_t));
                     } else if wave_resp.dragged() {
-                        if let Some(time) = hover_t {
-                            pending_commands.push(ViewerCommand::UpdateMeasurement(time as u64));
-                        }
+                        pending_commands.push(ViewerCommand::UpdateMeasurement(hover_t));
                     } else if wave_resp.clicked() {
-                        if let Some(time) = hover_t {
-                            pending_commands.push(ViewerCommand::SetCursor(time as u64));
-                        }
+                        pending_commands.push(ViewerCommand::SetCursor(hover_t));
                     }
 
                     let rounded_x = rect.min.x + (t_rounded - view_start) * pixels_per_tick;
@@ -833,9 +862,7 @@ impl eframe::App for TemplateApp {
                         let sp1 = pos2(rounded_x, max_rect.max.y);
                         let stroke = Stroke::new(2.0_f32, yellow);
                         shapes.push(Shape::line_segment([sp0, sp1], stroke));
-                        // this is looks like it works when we're scrolled to the top, overwise
-                        // it's below by a few pixels
-                        let pp0 = pos2(rounded_x, max_rect.min.y + 16.0);
+                        let pp0 = pos2(rounded_x, max_rect.min.y);
                         shapes.push(Shape::rect_filled(
                             egui::Rect::from_two_pos(pp0, p1),
                             egui::CornerRadius::ZERO,
@@ -860,78 +887,7 @@ impl eframe::App for TemplateApp {
 
                 if wave_resp.drag_stopped() {
                     pending_commands.push(ViewerCommand::EndMeasurement);
-                    active_measurement_start = None;
                 }
-
-                let rect = egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), y_min..=16.0);
-                let x_min = time_viewport.start().floor().max(0.0) as usize;
-                let x_max = time_viewport.end().ceil().max(0.0) as usize;
-                let mut ticks = vec![];
-                let stroke = egui::Stroke::new(2.0_f32, yellow);
-                let num_ticks = std::cmp::max(1, (rect.width() / 64.0).floor() as usize);
-                let gap = std::cmp::max(
-                    1,
-                    (time_viewport.span() / num_ticks as f64).round() as usize,
-                );
-                // render the previous tick because part of it is still visible
-                let mut i = (std::cmp::max(1, x_min) - 1) / gap * gap;
-                while i <= x_max {
-                    // in x_min..=x_max {
-                    let mut used_i = i;
-                    let mut highlight = false;
-                    let mut diff: Option<isize> = None;
-                    if let Some(t) = hover_t {
-                        // kinda ugly since we'll render twice if midway
-                        if i.abs_diff(t) <= gap / 2 {
-                            used_i = t;
-                            highlight = true;
-                            if let Some(st) = active_measurement_start {
-                                diff = Some((t as isize) - (st as isize))
-                            }
-                        }
-                    }
-                    if let Some(t) = active_measurement_start {
-                        let t = t as usize;
-                        if i.abs_diff(t) <= gap / 2 {
-                            used_i = t;
-                            highlight = true;
-                        }
-                    }
-                    let p0 = egui::pos2(
-                        rect.min.x + (used_i as f32 - view_start) * pixels_per_tick,
-                        max_rect.min.y + 4.0,
-                    );
-                    let p1 = egui::pos2(
-                        rect.min.x + (used_i as f32 - view_start) * pixels_per_tick,
-                        max_rect.min.y + 10.0,
-                    );
-                    ticks.push(egui::Shape::line_segment([p0, p1], stroke));
-
-                    use egui::*;
-                    let font_size = if highlight { 13.0 } else { 11.0 };
-                    let font = epaint::text::FontId::new(font_size, text::FontFamily::Monospace);
-                    let color = ui.style().visuals.text_color();
-
-                    if let Some(diff) = diff {
-                        let str = format!("{}{diff}", if diff < 0 { "" } else { "+" });
-                        let font = epaint::text::FontId::new(10.0, text::FontFamily::Monospace);
-                        let galley = ui.fonts_mut(|f| f.layout_no_wrap(str, font, color));
-                        // let rect =
-                        //     Align2::RIGHT_CENTER.anchor_rect(Rect::from_min_size(p0 - galley.size() - vec2(4.0, 0.0), galley.size()));
-                        ticks.push(Shape::galley(
-                            p0 - vec2(4.0 + galley.size().x, 0.0),
-                            galley,
-                            color,
-                        ));
-                    }
-                    let galley =
-                        ui.fonts_mut(|f| f.layout_no_wrap(used_i.to_string(), font, color));
-                    let rect = Align2::LEFT_CENTER
-                        .anchor_rect(Rect::from_min_size(p0 + vec2(4.0, 0.0), galley.size()));
-                    ticks.push(Shape::galley(rect.min + vec2(4.0, 0.0), galley, color));
-                    i += gap;
-                }
-                ui.painter().extend(ticks);
             });
         });
 

@@ -56,9 +56,9 @@ move its dirty worktree or retain its websocket/backend coupling.
 
 ## Watcher work
 
-- [ ] Watch `waveview-ui`, `eprompt`, and `timeline` sources.
-- [ ] Rebuild only the UI dylib/shim target.
-- [ ] Repaint immediately after successful reload.
+- [x] Watch `waveview-ui`, `eprompt`, and `timeline` sources.
+- [x] Rebuild only the UI dylib/shim target.
+- [x] Repaint immediately after successful reload.
 - [ ] Keep the previous dylib active and surface a nonfatal status when compilation fails.
 - [ ] Measure incremental builds and only consider another dylib if the normal edit cycle exceeds
   the agreed target on representative changes.
@@ -70,3 +70,12 @@ move its dirty worktree or retain its websocket/backend coupling.
 - `eprompt` has a backend-free demo/example.
 - `timeline` has a waveform-free demo/example and mapping tests.
 - Static native and WASM builds use the same component implementations without hot reload.
+
+## Current progress
+
+- `eprompt` is a fresh backend-free crate with caller-owned input/output, generic actions, an
+  embedded widget API, and a standalone demo.
+- `timeline` is a fresh waveform-free crate with relative high-precision coordinate mapping,
+  cursor/selection/mark painting, generic navigation actions, mapping tests, and a standalone demo.
+- Waveview's timeline now renders through the single UI dylib and maps generic timeline actions to
+  `ViewerCommand`; static builds call the identical implementation directly.

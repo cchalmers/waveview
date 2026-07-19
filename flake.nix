@@ -121,7 +121,7 @@
           text = ''
             cargo build -p waveview-ui-reload
             while true; do
-              find waveview-ui waveview-ui-reload waveview-model -type f \
+              find waveview-ui waveview-ui-reload waveview-model eprompt timeline -type f \
                 \( -name '*.rs' -o -name Cargo.toml \) \
                 | entr -dnp cargo build -p waveview-ui-reload \
                 || true
