@@ -95,8 +95,6 @@ impl<'a> Wave<'a> {
             ));
         }
 
-        let mut wave_ui = ui.new_child(UiBuilder::new().max_rect(rect).layout(Layout::default()));
-        wave_ui.set_clip_rect(rect);
         // let mut last_high;
         // let dx = 1.0;
         // let dy = 0.9;
@@ -198,7 +196,7 @@ impl<'a> Wave<'a> {
                     .collect(),
                 stroke,
             )];
-            ui.painter().extend(shapes);
+            wave_painter.extend(shapes);
         } else {
             let x_taper = 0.1;
             let mut pts_a = vec![];
@@ -295,7 +293,7 @@ impl<'a> Wave<'a> {
                     prev_start_x = x;
                 }
             }
-            ui.painter().extend(shapes);
+            wave_painter.extend(shapes);
         }
     }
 }

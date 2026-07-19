@@ -4682,7 +4682,9 @@ dependencies = [
  "eframe",
  "egui_plot",
  "epaint",
+ "eprompt",
  "log",
+ "timeline",
  "waveview-model",
 ]
 
