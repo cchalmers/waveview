@@ -26,6 +26,7 @@ mod hot_ui {
     use waveview_model::vim::{VimInput, VimState};
     use waveview_model::waveform::Waveform;
     use waveview_model::SignalId;
+    use waveview_ui::PromptUiConfig;
 
     hot_functions_from_file!("waveview-ui-reload/src/lib.rs");
 
@@ -107,12 +108,24 @@ pub fn render_help_menu(ui: &mut egui::Ui) -> Option<MenuAction> {
     waveview_ui::render_help_menu(ui)
 }
 
-pub fn prompt_height() -> f32 {
+pub fn prompt_config() -> waveview_ui::PromptUiConfig {
     #[cfg(all(feature = "reload", not(target_arch = "wasm32")))]
-    return hot_ui::prompt_height();
+    return hot_ui::prompt_config();
 
     #[cfg(not(all(feature = "reload", not(target_arch = "wasm32"))))]
-    waveview_ui::prompt_height()
+    waveview_ui::prompt_config()
+}
+
+pub fn prompt_layout(
+    body_rect: egui::Rect,
+    input_height: f32,
+    separator_gap: f32,
+) -> (egui::Rect, egui::Rect, f32) {
+    #[cfg(all(feature = "reload", not(target_arch = "wasm32")))]
+    return hot_ui::prompt_layout(body_rect, input_height, separator_gap);
+
+    #[cfg(not(all(feature = "reload", not(target_arch = "wasm32"))))]
+    waveview_ui::prompt_layout(body_rect, input_height, separator_gap)
 }
 
 pub fn render_prompt_header(ui: &mut egui::Ui) {
@@ -123,12 +136,25 @@ pub fn render_prompt_header(ui: &mut egui::Ui) {
     waveview_ui::render_prompt_header(ui);
 }
 
-pub fn render_prompt_output(ui: &mut egui::Ui, output: &[PromptOutput]) {
+pub fn render_prompt_transcript(
+    ui: &mut egui::Ui,
+    output: &[PromptOutput],
+    viewport: egui::Rect,
+    scroll_to_bottom: bool,
+) {
     #[cfg(all(feature = "reload", not(target_arch = "wasm32")))]
-    hot_ui::render_prompt_output(ui, output);
+    hot_ui::render_prompt_transcript(ui, output, viewport, scroll_to_bottom);
 
     #[cfg(not(all(feature = "reload", not(target_arch = "wasm32"))))]
-    waveview_ui::render_prompt_output(ui, output);
+    waveview_ui::render_prompt_transcript(ui, output, viewport, scroll_to_bottom);
+}
+
+pub fn render_prompt_separator(ui: &egui::Ui, x_range: egui::Rangef, y: f32) {
+    #[cfg(all(feature = "reload", not(target_arch = "wasm32")))]
+    hot_ui::render_prompt_separator(ui, x_range, y);
+
+    #[cfg(not(all(feature = "reload", not(target_arch = "wasm32"))))]
+    waveview_ui::render_prompt_separator(ui, x_range, y);
 }
 
 pub fn render_prompt_prefix(ui: &mut egui::Ui) {
@@ -137,6 +163,14 @@ pub fn render_prompt_prefix(ui: &mut egui::Ui) {
 
     #[cfg(not(all(feature = "reload", not(target_arch = "wasm32"))))]
     waveview_ui::render_prompt_prefix(ui);
+}
+
+pub fn prepare_prompt_input(ui: &mut egui::Ui) {
+    #[cfg(all(feature = "reload", not(target_arch = "wasm32")))]
+    hot_ui::prepare_prompt_input(ui);
+
+    #[cfg(not(all(feature = "reload", not(target_arch = "wasm32"))))]
+    waveview_ui::prepare_prompt_input(ui);
 }
 
 pub fn render_signal_browser_header(ui: &mut egui::Ui, all_signals_displayed: bool) -> bool {

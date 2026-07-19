@@ -38,10 +38,7 @@ impl Default for PromptRuntime {
             puts_output,
             viewer_commands,
             input: String::new(),
-            output: vec![PromptOutput::new(
-                "Molt command console",
-                PromptOutputKind::Muted,
-            )],
+            output: Vec::new(),
             open: false,
             focus_requested: false,
         }
@@ -103,10 +100,8 @@ impl PromptRuntime {
         }
 
         self.viewer_commands.borrow_mut().clear();
-        self.output.push(PromptOutput::new(
-            format!(": {script}"),
-            PromptOutputKind::Command,
-        ));
+        self.output
+            .push(PromptOutput::new(script.clone(), PromptOutputKind::Command));
         let result = self.interp.eval(&script);
         self.flush_puts();
         match result {
@@ -250,6 +245,9 @@ mod tests {
         prompt.set_input("error broken".to_owned());
         assert!(prompt.submit().is_empty());
 
+        assert!(prompt.output().iter().any(|entry| {
+            entry.kind == PromptOutputKind::Command && entry.text == "set answer 42"
+        }));
         assert!(prompt.output().iter().any(|entry| entry.text == "42"));
         assert!(prompt
             .output()

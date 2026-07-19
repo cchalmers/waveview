@@ -9,6 +9,7 @@ use waveview_model::viewer::ViewerState;
 use waveview_model::vim::{VimInput, VimState};
 use waveview_model::waveform::Waveform;
 use waveview_model::SignalId;
+use waveview_ui::PromptUiConfig;
 
 #[unsafe(no_mangle)]
 pub fn handle_vim_input(
@@ -64,8 +65,17 @@ pub fn render_help_menu(ui: &mut egui::Ui) -> Option<MenuAction> {
 }
 
 #[unsafe(no_mangle)]
-pub fn prompt_height() -> f32 {
-    waveview_ui::prompt_height()
+pub fn prompt_config() -> PromptUiConfig {
+    waveview_ui::prompt_config()
+}
+
+#[unsafe(no_mangle)]
+pub fn prompt_layout(
+    body_rect: egui::Rect,
+    input_height: f32,
+    separator_gap: f32,
+) -> (egui::Rect, egui::Rect, f32) {
+    waveview_ui::prompt_layout(body_rect, input_height, separator_gap)
 }
 
 #[unsafe(no_mangle)]
@@ -74,13 +84,28 @@ pub fn render_prompt_header(ui: &mut egui::Ui) {
 }
 
 #[unsafe(no_mangle)]
-pub fn render_prompt_output(ui: &mut egui::Ui, output: &[PromptOutput]) {
-    waveview_ui::render_prompt_output(ui, output);
+pub fn render_prompt_transcript(
+    ui: &mut egui::Ui,
+    output: &[PromptOutput],
+    viewport: egui::Rect,
+    scroll_to_bottom: bool,
+) {
+    waveview_ui::render_prompt_transcript(ui, output, viewport, scroll_to_bottom);
+}
+
+#[unsafe(no_mangle)]
+pub fn render_prompt_separator(ui: &egui::Ui, x_range: egui::Rangef, y: f32) {
+    waveview_ui::render_prompt_separator(ui, x_range, y);
 }
 
 #[unsafe(no_mangle)]
 pub fn render_prompt_prefix(ui: &mut egui::Ui) {
     waveview_ui::render_prompt_prefix(ui);
+}
+
+#[unsafe(no_mangle)]
+pub fn prepare_prompt_input(ui: &mut egui::Ui) {
+    waveview_ui::prepare_prompt_input(ui);
 }
 
 #[unsafe(no_mangle)]

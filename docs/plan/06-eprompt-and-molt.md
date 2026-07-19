@@ -78,8 +78,12 @@ single command string. Tcl commands translate to the same viewer commands used b
   bounded transcript, and a persistent Molt interpreter.
 - Standard Tcl evaluation works; `puts` is redirected into the transcript and results/errors use
   distinct generic output kinds.
-- The stateful `TextEdit` and `ScrollArea` remain in the stable host. Header, prompt prefix, and
-  transcript styling route through reloadable `eprompt` presentation helpers.
+- The panel/scroll/editor configuration, transcript/input rectangle calculation, input style, and
+  `eprompt` presentation route through the reloadable UI library. The stateful `Panel`, `TextEdit`,
+  and `ScrollArea` remain instantiated in the host with Molt, history, input/transcript data, and
+  effects so their state survives safely.
+- The host stores command transcript entries as undecorated scripts. The reloadable adapter owns
+  command decoration and the welcome banner instead of baking either into host output strings.
 - The dirty sibling fork has been audited and its minimal interpreter crate vendored with its
   BSD-3-Clause license and attribution. Non-library projects and documentation are omitted, and
   `eprompt` remains independent of Molt.

@@ -41,12 +41,11 @@ In practical terms, waveform/timeline painting, canvas hover/cursor/measurement 
 wheel zoom and horizontal pan, activity icons, the available-signal browser header/tree,
 signal-name/search painting, Vim command interpretation, mode status, and keyboard help can be
 changed without losing the loaded capture or viewer state. The command-console header, prompt
-prefix, and transcript presentation use `eprompt` through the same library. Application/panel
-orchestration, stateful egui
-containers (`TextEdit`, `ScrollArea`, drag-and-drop), file loading, shared
-model/search/waveform types and behavior, Vim state fields, and exported dynamic-library signatures
-need a restart. `vim_types.rs` is intentionally separate from `vim.rs` so that this distinction is
-unambiguous.
+prefix, transcript presentation, panel size values, and rectangle layout use `eprompt` through the
+same library. Application orchestration, stateful container behavior, file loading, drag-and-drop,
+shared model/search/waveform types and behavior, Vim state fields, and exported dynamic-library
+signatures need a restart. `vim_types.rs` is intentionally separate from `vim.rs` so that this
+distinction is unambiguous.
 
 The hot-side code is split by editing surface while still producing one dylib:
 
@@ -65,16 +64,17 @@ The hot-side code is split by editing surface while still producing one dylib:
 durable application state out of these component modules.
 
 The host deliberately owns stateful egui containers and virtualization offsets, then passes their
-inner `Ui` plus borrowed application state to reloadable render functions. This keeps egui state
-created by one dylib from surviving after that dylib is unloaded while allowing most visible
-contents and interactions to reload. Top-level menu popups follow the same rule: the host creates
-the popup, reloadable code paints its contents and emits a `MenuAction`, and the host performs the
-file, window, or model effect.
+inner `Ui` plus borrowed application state to reloadable render functions. This prevents persisted
+egui values from retaining type information or drop code from an unloaded dylib. Top-level menu
+popups follow the same rule: the host creates the popup, reloadable code paints its contents and
+emits a `MenuAction`, and the host performs the file, window, or model effect.
 
-The command console applies this rule more strictly: its Molt interpreter, input/history/output,
-`TextEdit`, and transcript `ScrollArea` are host-owned. Reloadable code paints the stateless
-presentation inside those containers. This avoids leaving persisted egui `TypeId` state behind
-when a dylib is unloaded.
+The command console keeps its `Panel`, `TextEdit`, and transcript `ScrollArea` in the host for that
+reason. Reloadable code supplies their visual/behavioral configuration, computes the transcript/
+input rectangles, prepares the input style, and paints the header, transcript, separator, and
+prompt prefix. Command entries are stored as raw scripts; command decoration and the welcome banner
+are reloadable presentation rather than host transcript data. Molt, history, input/transcript data,
+focus intent, scrolling state, and command effects are host-owned and survive replacement.
 
 A failed hot build leaves the previous UI active and shows a nonfatal failure message; compiler
 diagnostics remain in the terminal. Editing a restart-only file shows a persistent yellow `restart

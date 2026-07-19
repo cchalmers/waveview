@@ -10,6 +10,8 @@ mod timeline_adapter;
 mod vim_ui;
 mod wave;
 
+pub use prompt_adapter::PromptUiConfig;
+
 use eframe::egui;
 use std::collections::HashSet;
 use waveview_model::search::SearchMatcher;
@@ -66,20 +68,41 @@ pub fn render_help_menu(ui: &mut egui::Ui) -> Option<MenuAction> {
     menus::render_help(ui)
 }
 
-pub fn prompt_height() -> f32 {
-    prompt_adapter::default_height()
+pub fn prompt_config() -> PromptUiConfig {
+    prompt_adapter::config()
+}
+
+pub fn prompt_layout(
+    body_rect: egui::Rect,
+    input_height: f32,
+    separator_gap: f32,
+) -> (egui::Rect, egui::Rect, f32) {
+    prompt_adapter::layout(body_rect, input_height, separator_gap)
 }
 
 pub fn render_prompt_header(ui: &mut egui::Ui) {
     prompt_adapter::render_header(ui);
 }
 
-pub fn render_prompt_output(ui: &mut egui::Ui, output: &[PromptOutput]) {
-    prompt_adapter::render_output(ui, output);
+pub fn render_prompt_transcript(
+    ui: &mut egui::Ui,
+    output: &[PromptOutput],
+    viewport: egui::Rect,
+    scroll_to_bottom: bool,
+) {
+    prompt_adapter::render_transcript(ui, output, viewport, scroll_to_bottom);
+}
+
+pub fn render_prompt_separator(ui: &egui::Ui, x_range: egui::Rangef, y: f32) {
+    prompt_adapter::render_separator(ui, x_range, y);
 }
 
 pub fn render_prompt_prefix(ui: &mut egui::Ui) {
     prompt_adapter::render_prefix(ui);
+}
+
+pub fn prepare_prompt_input(ui: &mut egui::Ui) {
+    prompt_adapter::prepare_input(ui);
 }
 
 pub fn render_signal_browser_header(ui: &mut egui::Ui, all_signals_displayed: bool) -> bool {

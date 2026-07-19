@@ -4,7 +4,7 @@ use eframe::egui;
 use eframe::egui::NumExt;
 use egui::*;
 use waveview_model::search::{SearchHistory, SearchMatcher};
-use waveview_model::ui_types::{MenuAction, PromptOutput};
+use waveview_model::ui_types::MenuAction;
 use waveview_model::viewer::{
     DisplayedItem, EffectRequest, FocusPlacement, ViewerCommand, ViewerState,
 };
@@ -795,71 +795,72 @@ impl eframe::App for TemplateApp {
         });
 
         if prompt.is_open() {
+            let prompt_config = wave_dispatch::prompt_config();
             egui::Panel::bottom("command_prompt")
-                .default_size(wave_dispatch::prompt_height())
-                .min_size(100.0)
-                .resizable(true)
+                .default_size(prompt_config.panel_default_height)
+                .min_size(prompt_config.panel_minimum_height)
+                .max_size(prompt_config.panel_maximum_height)
+                .resizable(prompt_config.panel_resizable)
+                .show_separator_line(prompt_config.panel_show_separator_line)
                 .show(root_ui, |ui| {
                     wave_dispatch::render_prompt_header(ui);
-                    ui.separator();
                     let body_rect = ui.available_rect_before_wrap();
-                    let input_height = ui.spacing().interact_size.y;
-                    let separator_gap = ui.spacing().item_spacing.y;
-                    let input_rect = egui::Rect::from_min_max(
-                        egui::pos2(body_rect.left(), body_rect.bottom() - input_height),
-                        body_rect.right_bottom(),
-                    );
-                    let transcript_rect = egui::Rect::from_min_max(
-                        body_rect.left_top(),
-                        egui::pos2(body_rect.right(), input_rect.top() - separator_gap),
+                    let (transcript_rect, input_rect, separator_y) = wave_dispatch::prompt_layout(
+                        body_rect,
+                        ui.spacing().interact_size.y,
+                        ui.spacing().item_spacing.y,
                     );
 
                     let mut transcript_ui = ui.new_child(
                         egui::UiBuilder::new()
                             .id_salt("command_prompt_transcript")
                             .max_rect(transcript_rect)
-                            .layout(egui::Layout::top_down(egui::Align::Min)),
+                            .layout(egui::Layout::top_down(
+                                prompt_config.transcript_horizontal_align,
+                            )),
                     );
                     transcript_ui.set_clip_rect(transcript_rect);
                     transcript_ui.set_min_size(transcript_rect.size());
                     egui::ScrollArea::vertical()
                         .id_salt("command_prompt_output")
-                        .stick_to_bottom(true)
-                        .auto_shrink([false, false])
+                        .stick_to_bottom(prompt_config.scroll_stick_to_bottom)
+                        .auto_shrink(prompt_config.scroll_auto_shrink)
+                        .animated(prompt_config.scroll_animated)
                         .show(&mut transcript_ui, |ui| {
-                            let output_height =
-                                prompt_output_height(ui, prompt.output(), transcript_rect.width());
-                            ui.add_space((transcript_rect.height() - output_height).max(0.0));
-                            wave_dispatch::render_prompt_output(ui, prompt.output());
-                            if prompt_scroll_to_bottom {
-                                ui.scroll_to_cursor(Some(egui::Align::BOTTOM));
-                            }
+                            wave_dispatch::render_prompt_transcript(
+                                ui,
+                                prompt.output(),
+                                transcript_rect,
+                                prompt_scroll_to_bottom,
+                            );
                         });
 
-                    let separator_y = input_rect.top() - separator_gap * 0.5;
-                    ui.painter().hline(
-                        body_rect.x_range(),
-                        separator_y,
-                        ui.visuals().widgets.noninteractive.bg_stroke,
-                    );
+                    wave_dispatch::render_prompt_separator(ui, body_rect.x_range(), separator_y);
 
                     let mut input_ui = ui.new_child(
                         egui::UiBuilder::new()
                             .id_salt("command_prompt_input")
                             .max_rect(input_rect)
-                            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+                            .layout(egui::Layout::left_to_right(
+                                prompt_config.input_vertical_align,
+                            )),
                     );
                     input_ui.set_clip_rect(input_rect);
                     input_ui.set_min_size(input_rect.size());
                     input_ui.horizontal(|ui| {
+                        wave_dispatch::prepare_prompt_input(ui);
                         wave_dispatch::render_prompt_prefix(ui);
                         let cursor_end = prompt.input().chars().count();
-                        let mut output = egui::TextEdit::singleline(prompt.input_mut())
+                        let mut edit = egui::TextEdit::singleline(prompt.input_mut())
                             .id(command_prompt_id())
-                            .font(egui::TextStyle::Monospace)
-                            .frame(egui::Frame::NONE)
-                            .desired_width(f32::INFINITY)
-                            .show(ui);
+                            .margin(prompt_config.input_margin)
+                            .desired_width(prompt_config.input_desired_width)
+                            .min_size(prompt_config.input_min_size)
+                            .clip_text(prompt_config.input_clip_text);
+                        if !prompt_config.input_frame {
+                            edit = edit.frame(egui::Frame::NONE);
+                        }
+                        let mut output = edit.show(ui);
                         let response = output.response;
                         if prompt_history_moved {
                             output.state.cursor.set_char_range(Some(
@@ -1360,20 +1361,6 @@ fn signal_browser_search_id() -> egui::Id {
 
 fn command_prompt_id() -> egui::Id {
     egui::Id::new("command_prompt_input")
-}
-
-fn prompt_output_height(ui: &egui::Ui, output: &[PromptOutput], width: f32) -> f32 {
-    let text_height = output
-        .iter()
-        .map(|entry| {
-            egui::WidgetText::from(egui::RichText::new(&entry.text).monospace())
-                .into_galley(ui, None, width, egui::TextStyle::Body)
-                .size()
-                .y
-        })
-        .sum::<f32>();
-    let gaps = output.len().saturating_sub(1) as f32 * ui.spacing().item_spacing.y;
-    text_height + gaps
 }
 
 fn ctrl_key_character(key: egui::Key) -> Option<char> {
