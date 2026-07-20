@@ -43,6 +43,68 @@ fn main() {
     .unwrap();
 }
 
+/// Cancel the browser's default action for the Ctrl/Cmd chords that waveview's Vim engine
+/// binds in normal mode, so `Ctrl-D` (bookmark), `Ctrl-U` (view-source), `Ctrl-F` (find), etc.
+/// drive the viewer instead of the browser.
+///
+/// eframe 0.35 only calls `preventDefault` for a fixed set of keys (`Ctrl-O/P/S`, arrows, …)
+/// and offers no hook to extend it for keydown, so we install our own listener. egui still
+/// receives the key — we only suppress the browser's default action.
+///
+/// Notes:
+/// * `Ctrl-R` here becomes Vim "redo" rather than reload; `F5` still reloads.
+/// * `Ctrl-N` / `Ctrl-T` / `Ctrl-W` cannot be intercepted by a web page, so they are not listed.
+#[cfg(target_arch = "wasm32")]
+fn install_browser_key_guard() {
+    use wasm_bindgen::closure::Closure;
+    use wasm_bindgen::JsCast as _;
+
+    // Chords handled in normal mode (search-mode Ctrl-P/N only fire while a text field is
+    // focused, where we intentionally defer to the browser).
+    const GUARDED: &[&str] = &["b", "d", "e", "f", "i", "o", "r", "u", "v", "y"];
+
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+
+    let closure = Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(
+        move |event: web_sys::KeyboardEvent| {
+            // Only a lone Ctrl/Cmd chord (no Alt) maps to a Vim command.
+            if !(event.ctrl_key() || event.meta_key()) || event.alt_key() {
+                return;
+            }
+            // While the user is typing in a text field (egui's hidden input, the URL box, …)
+            // leave the browser alone so copy/paste/select-all keep working.
+            let editing = web_sys::window()
+                .and_then(|w| w.document())
+                .and_then(|d| d.active_element())
+                .is_some_and(|el| {
+                    matches!(el.tag_name().to_ascii_lowercase().as_str(), "input" | "textarea")
+                });
+            if editing {
+                return;
+            }
+            let key = event.key().to_ascii_lowercase();
+            if GUARDED.contains(&key.as_str()) {
+                event.prevent_default();
+            }
+        },
+    );
+
+    let options = web_sys::AddEventListenerOptions::new();
+    // Capture phase: run before egui's canvas handler, which stops propagation.
+    options.set_capture(true);
+    if let Err(err) = window.add_event_listener_with_callback_and_add_event_listener_options(
+        "keydown",
+        closure.as_ref().unchecked_ref(),
+        &options,
+    ) {
+        log::error!("failed to install browser key guard: {err:?}");
+    }
+    // Keep the listener alive for the lifetime of the page.
+    closure.forget();
+}
+
 #[cfg(target_arch = "wasm32")]
 fn main() {
     use wasm_bindgen::JsCast as _;
@@ -51,6 +113,8 @@ fn main() {
     tracing_wasm::set_as_global_default();
 
     eframe::WebLogger::init(log::LevelFilter::Debug).ok();
+
+    install_browser_key_guard();
 
     let signals = vec![];
     let canvas = web_sys::window()
