@@ -49,7 +49,6 @@ pub fn render(
         ui.visuals().extreme_bg_color,
     );
 
-    ui.skip_ahead_auto_ids(visible_rows.start);
     let response = ui.interact(
         interaction_rect,
         egui::Id::new("wave_canvas_interaction"),
@@ -60,6 +59,12 @@ pub fn render(
         hover_pos.map(|position| (position.x - canvas_rect.left()) / canvas_rect.width().max(1.0));
 
     ui.vertical(|ui| {
+        // Advance the auto-id counter *inside* the vertical layout, so each visible row's
+        // widget id is tied to its absolute index rather than its position in the visible
+        // window. Calling `skip_ahead_auto_ids` before `ui.vertical` instead would shift the
+        // vertical child ui's own id whenever the first visible row changes, reseeding every
+        // descendant row id and making egui report ids changing between passes while scrolling.
+        ui.skip_ahead_auto_ids(visible_rows.start);
         for (signal, item) in signals
             .iter()
             .take(visible_rows.end)

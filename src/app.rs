@@ -427,6 +427,12 @@ impl eframe::App for TemplateApp {
     /// Called each time the UI needs repainting, which may be many times per second.
     fn ui(&mut self, root_ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = root_ui.ctx().clone();
+        // The signal list and waveform canvas are virtualized: only the visible row window is
+        // built each frame, so a row's auto-generated widget id is tied to its absolute index.
+        // While scrolling, the row at a given screen position changes, so egui's debug-only
+        // "widget rect changed id between passes" check fires for the boundary rows every frame.
+        // This is expected for any virtualized list, so silence that particular diagnostic.
+        ctx.all_styles_mut(|style| style.debug.warn_if_rect_changes_id = false);
         let (mouse_moved, keyboard_used) = ctx.input(|input| {
             let keyboard_used = input.events.iter().any(|event| {
                 matches!(
