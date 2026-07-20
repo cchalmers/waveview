@@ -734,6 +734,9 @@ impl Interp {
     ///
     /// Changes to the variable are not mirrored back into the process's environment.
     fn populate_env(&mut self) {
+        // `std::env::vars()` is unsupported on wasm and panics ("not supported on this
+        // platform"), so leave the `env()` array empty there.
+        #[cfg(not(target_arch = "wasm32"))]
         for (key, value) in std::env::vars() {
             // Drop the result, as there's no good reason for this to ever throw an error.
             let _ = self.set_element("env", &key, value.into());
