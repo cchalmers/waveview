@@ -378,8 +378,12 @@ pub fn read_clocked_vcd(
 
     for item in header_vars(&header.items) {
         match item.var.var_type {
-            vcd::VarType::Reg | vcd::VarType::Wire => (),
-            _ => continue,
+            // Real and String variables carry ChangeReal/ChangeString rather than
+            // scalar/vector bit changes, so they aren't representable as bit-vector
+            // signals here. Every other type (Wire, Reg, Integer, Time, Tri, WAnd, …)
+            // is a bit vector and is registered so its value changes have a home.
+            vcd::VarType::Real | vcd::VarType::String => continue,
+            _ => (),
         }
         signal_map.insert(item.var.code, Signal::new(item.var.size as usize));
         id_map.insert(item.var.code, item);
